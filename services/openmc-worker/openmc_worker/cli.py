@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -33,6 +34,10 @@ def main(argv: list[str] | None = None) -> int:
     generate = subparsers.add_parser("generate-inputs")
     generate.add_argument("--project-dir", required=True)
 
+    run = subparsers.add_parser("run-openmc")
+    run.add_argument("--project-dir", required=True)
+    run.add_argument("--json", default="{}")
+
     args = parser.parse_args(argv)
 
     if args.command == "handshake":
@@ -47,6 +52,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "generate-inputs":
         return emit(generate_inputs(Path(args.project_dir)))
+
+    if args.command == "run-openmc":
+        payload = json.loads(args.json)
+        return emit(run_openmc(Path(args.project_dir), payload))
 
     return 2
 
@@ -150,6 +159,76 @@ def generate_inputs(project_dir: Path) -> dict[str, Any]:
     return {"ok": True, "generatedDir": str(generated_dir), "files": sorted(artifacts.keys())}
 
 
+def run_openmc(project_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    generated_dir = project_dir / "generated"
+    if not generated_dir.is_dir():
+        generation = generate_inputs(project_dir)
+        if not generation.get("ok"):
+            return generation
+
+    command = payload.get("command")
+    if command and isinstance(command, list):
+        base_command = [str(part) for part in command]
+    else:
+        candidates = detect_candidates()
+        base_command = candidates[0].command if candidates else []
+
+    if not base_command:
+        return {"ok": False, "message": "OpenMC command was not found. Run environment detection or set a manual command."}
+
+    run_id = datetime.now(timezone.utc).strftime("run-%Y%m%dT%H%M%SZ")
+    run_dir = project_dir / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    started_at = datetime.now(timezone.utc).isoformat()
+
+    try:
+        result = subprocess.run(
+            base_command,
+            cwd=generated_dir,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=int(payload.get("timeoutSeconds", 3600)),
+        )
+        stdout = result.stdout
+        stderr = result.stderr
+        return_code = result.returncode
+        ok = return_code == 0
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        stdout = ""
+        stderr = str(exc)
+        return_code = -1
+        ok = False
+
+    ended_at = datetime.now(timezone.utc).isoformat()
+    (run_dir / "stdout.log").write_text(stdout, encoding="utf-8")
+    (run_dir / "stderr.log").write_text(stderr, encoding="utf-8")
+
+    manifest = {
+        "runId": run_id,
+        "ok": ok,
+        "command": base_command,
+        "projectDir": str(project_dir),
+        "workingDir": str(generated_dir),
+        "returnCode": return_code,
+        "startedAt": started_at,
+        "endedAt": ended_at,
+        "stdoutLog": str(run_dir / "stdout.log"),
+        "stderrLog": str(run_dir / "stderr.log"),
+    }
+    (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+
+    return {
+        "ok": ok,
+        "runId": run_id,
+        "runDir": str(run_dir),
+        "returnCode": return_code,
+        "stdoutTail": tail(stdout),
+        "stderrTail": tail(stderr),
+        "manifest": manifest,
+    }
+
+
 def generate_materials_xml(model: dict[str, Any]) -> str:
     chunks = []
     for index, material in enumerate(model.get("materials", {}).get("materials", []), start=1):
@@ -202,6 +281,10 @@ def xml_doc(root: str, body: str) -> str:
 
 def xml_escape(value: Any) -> str:
     return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&apos;")
+
+
+def tail(value: str, limit: int = 4000) -> str:
+    return value[-limit:]
 
 
 def emit(payload: dict[str, Any]) -> int:

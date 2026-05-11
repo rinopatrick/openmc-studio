@@ -49,6 +49,38 @@ export async function generateOpenMcInputs(projectDir: string): Promise<{ ok: bo
   return parseWorkerJson<{ ok: boolean; generatedDir: string; files: string[] }>(result);
 }
 
+export interface OpenMcRunResult {
+  ok: boolean;
+  runId?: string;
+  runDir?: string;
+  returnCode?: number;
+  stdoutTail?: string;
+  stderrTail?: string;
+  message?: string;
+}
+
+export interface RunHistoryEntry {
+  runId: string;
+  ok?: boolean;
+  returnCode?: number;
+  startedAt?: string;
+  endedAt?: string;
+  runDir: string;
+}
+
+export async function runOpenMc(projectDir: string, command?: string[]): Promise<OpenMcRunResult> {
+  const result = await invokeWorker('run_openmc', { request: { projectDir, command, timeoutSeconds: 3600 } });
+  return parseWorkerJson<OpenMcRunResult>(result);
+}
+
+export async function listRunHistory(projectDir: string): Promise<RunHistoryEntry[]> {
+  try {
+    return await invoke<RunHistoryEntry[]>('list_run_history', { request: { projectDir } });
+  } catch {
+    return [];
+  }
+}
+
 async function invokeWorker(command: string, args?: Record<string, unknown>): Promise<WorkerResult> {
   try {
     return await invoke<WorkerResult>(command, args);

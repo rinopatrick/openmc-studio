@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import unittest
 import json
+import sys
 import tempfile
 from pathlib import Path
 
-from openmc_worker.cli import detect_candidates, generate_inputs, health_check
+from openmc_worker.cli import detect_candidates, generate_inputs, health_check, run_openmc
 
 
 class WorkerTests(unittest.TestCase):
@@ -38,6 +39,27 @@ class WorkerTests(unittest.TestCase):
             result = generate_inputs(root)
             self.assertTrue(result["ok"])
             self.assertTrue((root / "generated" / "settings.xml").is_file())
+
+    def test_run_openmc_captures_manifest_for_supplied_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            model_dir = root / "model"
+            model_dir.mkdir()
+            (model_dir / "model.json").write_text(
+                json.dumps(
+                    {
+                        "materials": {"materials": []},
+                        "root": {"name": "Root", "children": []},
+                        "settings": {"mode": "eigenvalue", "particles": 1000},
+                        "tallies": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_openmc(root, {"command": [sys.executable, "-c", "print('openmc stub')"]})
+            self.assertTrue(result["ok"])
+            self.assertTrue((Path(result["runDir"]) / "manifest.json").is_file())
 
 
 if __name__ == "__main__":

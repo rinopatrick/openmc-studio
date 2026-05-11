@@ -37,11 +37,36 @@ struct GenerateInputsRequest {
     project_dir: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunOpenMcRequest {
+    project_dir: String,
+    command: Option<Vec<String>>,
+    timeout_seconds: Option<u64>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LoadProjectResult {
     manifest_json: String,
     model_json: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListRunsRequest {
+    project_dir: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RunHistoryEntry {
+    run_id: String,
+    ok: Option<bool>,
+    return_code: Option<i64>,
+    started_at: Option<String>,
+    ended_at: Option<String>,
+    run_dir: String,
 }
 
 #[tauri::command]
@@ -100,6 +125,62 @@ fn load_project_bundle(request: LoadProjectRequest) -> Result<LoadProjectResult,
 #[tauri::command]
 fn generate_openmc_inputs(request: GenerateInputsRequest) -> Result<WorkerResult, String> {
     run_worker(&["generate-inputs", "--project-dir"], Some(request.project_dir))
+}
+
+#[tauri::command]
+fn run_openmc(request: RunOpenMcRequest) -> Result<WorkerResult, String> {
+    let payload = serde_json::to_string(&serde_json::json!({
+        "command": request.command,
+        "timeoutSeconds": request.timeout_seconds.unwrap_or(3600),
+    }))
+    .map_err(|error| error.to_string())?;
+
+    run_worker(
+        &["run-openmc", "--project-dir", request.project_dir.as_str(), "--json"],
+        Some(payload),
+    )
+}
+
+#[tauri::command]
+fn list_run_history(request: ListRunsRequest) -> Result<Vec<RunHistoryEntry>, String> {
+    let runs_dir = PathBuf::from(request.project_dir).join("runs");
+    if !runs_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut entries: Vec<RunHistoryEntry> = Vec::new();
+
+    for entry_result in fs::read_dir(&runs_dir).map_err(|error| error.to_string())? {
+        let entry = entry_result.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let manifest_path = path.join("manifest.json");
+        if !manifest_path.is_file() {
+            continue;
+        }
+
+        let text = fs::read_to_string(&manifest_path).map_err(|error| error.to_string())?;
+        let value: serde_json::Value = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+
+        entries.push(RunHistoryEntry {
+            run_id: value
+                .get("runId")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown")
+                .to_string(),
+            ok: value.get("ok").and_then(serde_json::Value::as_bool),
+            return_code: value.get("returnCode").and_then(serde_json::Value::as_i64),
+            started_at: value.get("startedAt").and_then(serde_json::Value::as_str).map(ToString::to_string),
+            ended_at: value.get("endedAt").and_then(serde_json::Value::as_str).map(ToString::to_string),
+            run_dir: path.to_string_lossy().to_string(),
+        });
+    }
+
+    entries.sort_by(|left, right| right.run_id.cmp(&left.run_id));
+    Ok(entries)
 }
 
 fn run_worker(args: &[&str], trailing_arg: Option<String>) -> Result<WorkerResult, String> {
@@ -161,7 +242,9 @@ pub fn run() {
             health_check_openmc,
             save_project_bundle,
             load_project_bundle,
-            generate_openmc_inputs
+            generate_openmc_inputs,
+            run_openmc,
+            list_run_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenMC Studio");

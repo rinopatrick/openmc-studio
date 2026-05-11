@@ -14,10 +14,13 @@ import {
   detectOpenMcEnvironment,
   healthCheckOpenMc,
   generateOpenMcInputs,
+  listRunHistory,
+  runOpenMc,
   workerHandshake,
   type DetectEnvironmentResponse,
   type HealthCheckResponse,
   type OpenMcCandidate,
+  type RunHistoryEntry,
 } from '../tauri/worker.js';
 import { loadProjectBundle, saveProjectBundle } from '../tauri/projectStorage.js';
 import { LatticeCanvas } from './LatticeCanvas.js';
@@ -401,7 +404,20 @@ function ValidationPanel({ diagnostics }: { diagnostics: ReturnType<typeof valid
 function RunPanel({ project }: { project: ProjectBundle }) {
   const artifacts = useMemo(() => generateOpenMcArtifacts(project.model), [project]);
   const [projectDir, setProjectDir] = useState('');
+  const [manualCommand, setManualCommand] = useState('');
   const [message, setMessage] = useState<string | null>(null);
+  const [runLog, setRunLog] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [runHistory, setRunHistory] = useState<RunHistoryEntry[]>([]);
+
+  async function refreshHistory() {
+    if (!projectDir.trim()) {
+      setRunHistory([]);
+      return;
+    }
+
+    setRunHistory(await listRunHistory(projectDir.trim()));
+  }
 
   async function writeInputs() {
     if (!projectDir.trim()) {
@@ -418,6 +434,31 @@ function RunPanel({ project }: { project: ProjectBundle }) {
     }
   }
 
+  async function executeOpenMc() {
+    if (!projectDir.trim()) {
+      setMessage('Enter a saved project directory first.');
+      return;
+    }
+
+    setIsRunning(true);
+    setMessage(null);
+    setRunLog(null);
+
+    try {
+      await saveProjectBundle(projectDir.trim(), project);
+      await generateOpenMcInputs(projectDir.trim());
+      const command = manualCommand.trim() ? splitCommand(manualCommand.trim()) : undefined;
+      const result = await runOpenMc(projectDir.trim(), command);
+      setMessage(result.ok ? `Run ${result.runId} completed.` : result.message ?? `Run failed with code ${result.returnCode}.`);
+      setRunLog([result.stdoutTail, result.stderrTail].filter(Boolean).join('\n'));
+      await refreshHistory();
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setIsRunning(false);
+    }
+  }
+
   return (
     <section className="panel-grid">
       <article className="card hero-card">
@@ -427,8 +468,15 @@ function RunPanel({ project }: { project: ProjectBundle }) {
         <div className="project-storage">
           <label htmlFor="run-project-dir">Project directory</label>
           <input id="run-project-dir" value={projectDir} onChange={(event) => setProjectDir(event.target.value)} placeholder="Project folder to write generated inputs" />
-          <button className="primary-action" onClick={writeInputs}>Write generated OpenMC inputs</button>
+          <label htmlFor="openmc-command">OpenMC command override</label>
+          <input id="openmc-command" value={manualCommand} onChange={(event) => setManualCommand(event.target.value)} placeholder="optional, e.g. openmc or python -m openmc" />
+          <div className="action-row compact">
+            <button className="secondary-action" onClick={writeInputs}>Write generated OpenMC inputs</button>
+            <button className="primary-action" disabled={isRunning} onClick={executeOpenMc}>{isRunning ? 'Running...' : 'Run OpenMC'}</button>
+            <button className="secondary-action" onClick={refreshHistory}>Refresh run history</button>
+          </div>
           {message && <p className="muted">{message}</p>}
+          {runLog && <pre>{runLog}</pre>}
         </div>
       </article>
       <article className="card artifact-preview">
@@ -436,9 +484,27 @@ function RunPanel({ project }: { project: ProjectBundle }) {
         <pre>{artifacts.settingsXml}</pre>
         <h3>materials.xml preview</h3>
         <pre>{artifacts.materialsXml.slice(0, 900)}</pre>
+        <h3>Run history</h3>
+        {runHistory.length === 0 ? (
+          <p className="muted">No runs found for this project directory.</p>
+        ) : (
+          <div className="history-list">
+            {runHistory.map((entry) => (
+              <div key={entry.runId} className="history-item">
+                <strong>{entry.runId}</strong>
+                <span>{entry.ok ? 'OK' : 'FAILED'} (code: {entry.returnCode ?? 'n/a'})</span>
+                <span>{entry.startedAt ?? 'unknown start'}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </article>
     </section>
   );
+}
+
+function splitCommand(command: string): string[] {
+  return command.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((part) => part.replace(/^"|"$/g, '')) ?? [command];
 }
 
 function ResultsPanel() {
