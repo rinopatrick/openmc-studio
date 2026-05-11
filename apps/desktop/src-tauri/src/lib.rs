@@ -70,6 +70,13 @@ struct ListProofPacksRequest {
     project_dir: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SubmissionBundleRequest {
+    project_dir: String,
+    repo_url: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LoadProjectResult {
@@ -191,6 +198,15 @@ fn list_proof_packs(request: ListProofPacksRequest) -> Result<WorkerResult, Stri
 }
 
 #[tauri::command]
+fn export_submission_bundle(request: SubmissionBundleRequest) -> Result<WorkerResult, String> {
+    let repo_url = request.repo_url.unwrap_or_default();
+    run_worker(
+        &["export-submission-bundle", "--project-dir", request.project_dir.as_str(), "--repo-url"],
+        Some(repo_url),
+    )
+}
+
+#[tauri::command]
 fn list_run_history(request: ListRunsRequest) -> Result<Vec<RunHistoryEntry>, String> {
     let runs_dir = PathBuf::from(request.project_dir).join("runs");
     if !runs_dir.is_dir() {
@@ -297,7 +313,8 @@ pub fn run() {
             summarize_results,
             export_proof_pack,
             summarize_statepoint,
-            list_proof_packs
+            list_proof_packs,
+            export_submission_bundle
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenMC Studio");

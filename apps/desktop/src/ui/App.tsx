@@ -16,6 +16,7 @@ import {
   generateOpenMcInputs,
   listRunHistory,
   exportProofPack,
+  exportSubmissionBundle,
   listProofPacks,
   runOpenMc,
   summarizeStatepoint,
@@ -518,6 +519,7 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
   const [summary, setSummary] = useState<string | null>(null);
   const [statepointSummary, setStatepointSummary] = useState<StatepointSummary | null>(null);
   const [proofMessage, setProofMessage] = useState<string | null>(null);
+  const [bundleMessage, setBundleMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<RunHistoryEntry[]>([]);
   const [proofPacks, setProofPacks] = useState<ProofPackEntry[]>([]);
 
@@ -563,6 +565,21 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
     setProofPacks(await listProofPacks(projectDir.trim()));
   }
 
+  async function exportSubmissionZip() {
+    if (!projectDir.trim()) {
+      setBundleMessage('Enter a project directory first.');
+      return;
+    }
+
+    try {
+      await saveProjectBundle(projectDir.trim(), project);
+      const result = await exportSubmissionBundle(projectDir.trim(), 'https://github.com/rinopatrick/openmc-studio');
+      setBundleMessage(`Submission ZIP created at ${result.bundlePath}`);
+    } catch (caught) {
+      setBundleMessage(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
   async function loadStatepointSummary() {
     if (!projectDir.trim()) {
       setSummary('Enter a project directory first.');
@@ -600,6 +617,7 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
             <button className="secondary-action" onClick={loadStatepointSummary}>Load statepoint summary</button>
             <button className="primary-action" onClick={generateProofPack}>Export proof pack</button>
             <button className="secondary-action" onClick={refreshProofPacks}>List proof packs</button>
+            <button className="primary-action" onClick={exportSubmissionZip}>Export submission ZIP</button>
           </div>
           {summary && <p className="muted">{summary}</p>}
           <RunTrendChart history={history} />
@@ -614,6 +632,7 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
             </div>
           )}
           {proofMessage && <p className="muted">{proofMessage}</p>}
+          {bundleMessage && <p className="muted">{bundleMessage}</p>}
           {proofPacks.length > 0 && (
             <div className="history-list">
               {proofPacks.map((pack) => (

@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import zipfile
 from datetime import datetime, timezone
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -51,6 +52,10 @@ def main(argv: list[str] | None = None) -> int:
     proof_list = subparsers.add_parser("list-proof-packs")
     proof_list.add_argument("--project-dir", required=True)
 
+    bundle = subparsers.add_parser("export-submission-bundle")
+    bundle.add_argument("--project-dir", required=True)
+    bundle.add_argument("--repo-url", default="")
+
     args = parser.parse_args(argv)
 
     if args.command == "handshake":
@@ -81,6 +86,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "list-proof-packs":
         return emit(list_proof_packs(Path(args.project_dir)))
+
+    if args.command == "export-submission-bundle":
+        return emit(export_submission_bundle(Path(args.project_dir), args.repo_url))
 
     return 2
 
@@ -405,6 +413,77 @@ def list_proof_packs(project_dir: Path) -> dict[str, Any]:
 
     packs.sort(key=lambda item: item["name"], reverse=True)
     return {"ok": True, "proofPacks": packs}
+
+
+def export_submission_bundle(project_dir: Path, repo_url: str) -> dict[str, Any]:
+    reports_dir = project_dir / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    bundle_name = f"mimo-submission-{timestamp}.zip"
+    bundle_path = reports_dir / bundle_name
+
+    summary = summarize_results(project_dir).get("summary", {})
+    statepoint = summarize_statepoint(project_dir)
+    proof_packs = list_proof_packs(project_dir).get("proofPacks", [])
+
+    with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        # Core project files
+        _add_if_exists(archive, project_dir / "project.json", "project.json")
+        _add_if_exists(archive, project_dir / "model" / "model.json", "model/model.json")
+
+        # Generated inputs
+        generated_dir = project_dir / "generated"
+        if generated_dir.is_dir():
+            for filename in ["materials.xml", "geometry.xml", "settings.xml", "tallies.xml"]:
+                _add_if_exists(archive, generated_dir / filename, f"generated/{filename}")
+
+        # Latest run artifacts
+        runs_dir = project_dir / "runs"
+        latest_runs: list[Path] = []
+        if runs_dir.is_dir():
+            latest_runs = sorted([item for item in runs_dir.iterdir() if item.is_dir()], key=lambda path: path.name, reverse=True)[:3]
+            for run in latest_runs:
+                _add_if_exists(archive, run / "manifest.json", f"runs/{run.name}/manifest.json")
+                _add_if_exists(archive, run / "stdout.log", f"runs/{run.name}/stdout.log")
+                _add_if_exists(archive, run / "stderr.log", f"runs/{run.name}/stderr.log")
+
+        # Latest proof pack checklist files
+        for pack in proof_packs[:3]:
+            pack_dir = Path(pack["path"])
+            _add_if_exists(archive, pack_dir / "proof-checklist.json", f"proof/{pack_dir.name}/proof-checklist.json")
+            _add_if_exists(archive, pack_dir / "mimo-answer-template.txt", f"proof/{pack_dir.name}/mimo-answer-template.txt")
+
+        submission_meta = {
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "repoUrl": repo_url,
+            "projectDir": str(project_dir),
+            "summary": summary,
+            "statepoint": statepoint.get("summary"),
+            "includedRuns": [run.name for run in latest_runs],
+        }
+        archive.writestr("submission/metadata.json", json.dumps(submission_meta, indent=2))
+
+        checklist = (
+            "Mimo Submission Quick Checklist\n"
+            "1. Attach this ZIP bundle.\n"
+            "2. Attach terminal screenshots for typecheck/test/build.\n"
+            "3. Attach UI screenshots (Environment/Model/Validation/Run/Results).\n"
+            "4. Include GitHub URL and latest commit hashes.\n"
+            f"GitHub: {repo_url}\n"
+        )
+        archive.writestr("submission/checklist.txt", checklist)
+
+    return {
+        "ok": True,
+        "bundlePath": str(bundle_path),
+        "includedProofPacks": len(proof_packs[:3]),
+        "includedRuns": len(latest_runs),
+    }
+
+
+def _add_if_exists(archive: zipfile.ZipFile, source: Path, destination: str) -> None:
+    if source.is_file():
+        archive.write(source, arcname=destination)
 
 
 def summarize_statepoint(project_dir: Path) -> dict[str, Any]:

@@ -5,10 +5,12 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+import zipfile
 
 from openmc_worker.cli import (
     detect_candidates,
     export_proof_pack,
+    export_submission_bundle,
     generate_inputs,
     health_check,
     list_proof_packs,
@@ -98,6 +100,38 @@ class WorkerTests(unittest.TestCase):
             packs = list_proof_packs(root)
             self.assertTrue(packs["ok"])
             self.assertGreaterEqual(len(packs["proofPacks"]), 1)
+
+    def test_export_submission_bundle_creates_zip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            model_dir = root / "model"
+            model_dir.mkdir(parents=True)
+            (root / "project.json").write_text(json.dumps({"schemaVersion": 1}), encoding="utf-8")
+            (model_dir / "model.json").write_text(
+                json.dumps(
+                    {
+                        "materials": {"materials": []},
+                        "root": {"name": "Root", "children": []},
+                        "settings": {"mode": "eigenvalue", "particles": 1000},
+                        "tallies": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            generate_inputs(root)
+            run_openmc(root, {"command": [sys.executable, "-c", "print('openmc stub')"]})
+            export_proof_pack(root, "https://github.com/rinopatrick/openmc-studio")
+
+            result = export_submission_bundle(root, "https://github.com/rinopatrick/openmc-studio")
+            self.assertTrue(result["ok"])
+            bundle_path = Path(result["bundlePath"])
+            self.assertTrue(bundle_path.is_file())
+
+            with zipfile.ZipFile(bundle_path, "r") as archive:
+                names = archive.namelist()
+                self.assertIn("submission/metadata.json", names)
+                self.assertIn("submission/checklist.txt", names)
 
     def test_summarize_statepoint_graceful_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

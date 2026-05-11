@@ -129,6 +129,11 @@ export async function listProofPacks(projectDir: string): Promise<ProofPackEntry
   return parsed.proofPacks;
 }
 
+export async function exportSubmissionBundle(projectDir: string, repoUrl: string): Promise<{ ok: boolean; bundlePath: string }> {
+  const result = await invokeWorker('export_submission_bundle', { request: { projectDir, repoUrl } });
+  return parseWorkerJson<{ ok: boolean; bundlePath: string }>(result);
+}
+
 async function invokeWorker(command: string, args?: Record<string, unknown>): Promise<WorkerResult> {
   try {
     return await invoke<WorkerResult>(command, args);
