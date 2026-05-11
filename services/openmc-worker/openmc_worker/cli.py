@@ -39,6 +39,11 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--project-dir", required=True)
     run.add_argument("--json", default="{}")
 
+    live = subparsers.add_parser("live-run-status")
+    live.add_argument("--project-dir", required=True)
+    live.add_argument("--run-id", default="")
+    live.add_argument("--tail", type=int, default=3000)
+
     summarize = subparsers.add_parser("summarize-results")
     summarize.add_argument("--project-dir", required=True)
 
@@ -78,6 +83,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run-openmc":
         payload = json.loads(args.json)
         return emit(run_openmc(Path(args.project_dir), payload))
+
+    if args.command == "live-run-status":
+        return emit(live_run_status(Path(args.project_dir), args.run_id, args.tail))
 
     if args.command == "summarize-results":
         return emit(summarize_results(Path(args.project_dir)))
@@ -273,6 +281,53 @@ def run_openmc(project_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
         "stderrTail": tail(stderr),
         "manifest": manifest,
     }
+
+
+def live_run_status(project_dir: Path, run_id: str, tail_size: int) -> dict[str, Any]:
+    runs_dir = project_dir / "runs"
+    if not runs_dir.is_dir():
+        return {"ok": False, "message": "No runs directory found."}
+
+    run_dir = resolve_run_dir(runs_dir, run_id)
+    if run_dir is None:
+        return {"ok": False, "message": "No run found."}
+
+    manifest_path = run_dir / "manifest.json"
+    stdout_path = run_dir / "stdout.log"
+    stderr_path = run_dir / "stderr.log"
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {}
+    stdout = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.is_file() else ""
+    stderr = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.is_file() else ""
+
+    status = "completed" if manifest else "running"
+    if manifest and not manifest.get("ok", False):
+        status = "failed"
+
+    return {
+        "ok": True,
+        "runId": manifest.get("runId", run_dir.name),
+        "status": status,
+        "returnCode": manifest.get("returnCode"),
+        "startedAt": manifest.get("startedAt"),
+        "endedAt": manifest.get("endedAt"),
+        "stdoutTail": tail(stdout, max(500, tail_size)),
+        "stderrTail": tail(stderr, max(500, tail_size)),
+        "runDir": str(run_dir),
+    }
+
+
+def resolve_run_dir(runs_dir: Path, run_id: str) -> Path | None:
+    if run_id:
+        candidate = runs_dir / run_id
+        if candidate.is_dir():
+            return candidate
+        return None
+
+    run_candidates = [item for item in runs_dir.iterdir() if item.is_dir()]
+    if not run_candidates:
+        return None
+    return sorted(run_candidates, key=lambda path: path.name, reverse=True)[0]
 
 
 def generate_materials_xml(model: dict[str, Any]) -> str:

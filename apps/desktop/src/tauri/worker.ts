@@ -59,6 +59,19 @@ export interface OpenMcRunResult {
   message?: string;
 }
 
+export interface LiveRunStatus {
+  ok: boolean;
+  runId?: string;
+  status?: 'running' | 'completed' | 'failed';
+  returnCode?: number;
+  startedAt?: string;
+  endedAt?: string;
+  stdoutTail?: string;
+  stderrTail?: string;
+  runDir?: string;
+  message?: string;
+}
+
 export interface RunHistoryEntry {
   runId: string;
   ok?: boolean;
@@ -99,6 +112,11 @@ export interface ProofPackEntry {
 export async function runOpenMc(projectDir: string, command?: string[]): Promise<OpenMcRunResult> {
   const result = await invokeWorker('run_openmc', { request: { projectDir, command, timeoutSeconds: 3600 } });
   return parseWorkerJson<OpenMcRunResult>(result);
+}
+
+export async function liveRunStatus(projectDir: string, runId?: string, tail = 3000): Promise<LiveRunStatus> {
+  const result = await invokeWorker('live_run_status', { request: { projectDir, runId, tail } });
+  return parseWorkerJson<LiveRunStatus>(result);
 }
 
 export async function listRunHistory(projectDir: string): Promise<RunHistoryEntry[]> {

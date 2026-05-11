@@ -12,6 +12,7 @@ from openmc_worker.cli import (
     export_proof_pack,
     export_submission_bundle,
     generate_inputs,
+    live_run_status,
     health_check,
     list_proof_packs,
     run_openmc,
@@ -144,6 +145,32 @@ class WorkerTests(unittest.TestCase):
             self.assertTrue(result["ok"])
             self.assertIsNotNone(result["summary"])
             self.assertTrue(str(result["summary"]["statepointPath"]).endswith("statepoint.001.h5"))
+
+    def test_live_run_status_no_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = live_run_status(Path(tmp), "", 1000)
+            self.assertFalse(result["ok"])
+
+    def test_live_run_status_reads_latest_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            model_dir = root / "model"
+            model_dir.mkdir(parents=True)
+            (model_dir / "model.json").write_text(
+                json.dumps(
+                    {
+                        "materials": {"materials": []},
+                        "root": {"name": "Root", "children": []},
+                        "settings": {"mode": "eigenvalue", "particles": 1000},
+                        "tallies": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            run_openmc(root, {"command": [sys.executable, "-c", "print('openmc stub')"]})
+            status = live_run_status(root, "", 1200)
+            self.assertTrue(status["ok"])
+            self.assertIn(status["status"], ["completed", "failed"])
 
 
 if __name__ == "__main__":

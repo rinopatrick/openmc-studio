@@ -84,6 +84,14 @@ struct MimoDraftRequest {
     repo_url: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveRunStatusRequest {
+    project_dir: String,
+    run_id: Option<String>,
+    tail: Option<u64>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LoadProjectResult {
@@ -225,6 +233,23 @@ fn generate_mimo_draft(request: MimoDraftRequest) -> Result<WorkerResult, String
 }
 
 #[tauri::command]
+fn live_run_status(request: LiveRunStatusRequest) -> Result<WorkerResult, String> {
+    let run_id = request.run_id.unwrap_or_default();
+    let tail = request.tail.unwrap_or(3000).to_string();
+    run_worker(
+        &[
+            "live-run-status",
+            "--project-dir",
+            request.project_dir.as_str(),
+            "--run-id",
+            run_id.as_str(),
+            "--tail",
+        ],
+        Some(tail),
+    )
+}
+
+#[tauri::command]
 fn list_run_history(request: ListRunsRequest) -> Result<Vec<RunHistoryEntry>, String> {
     let runs_dir = PathBuf::from(request.project_dir).join("runs");
     if !runs_dir.is_dir() {
@@ -335,7 +360,8 @@ pub fn run() {
             summarize_statepoint,
             list_proof_packs,
             export_submission_bundle,
-            generate_mimo_draft
+            generate_mimo_draft,
+            live_run_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenMC Studio");

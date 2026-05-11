@@ -8,7 +8,7 @@ import {
   type ProjectBundle,
   type ReactorModel,
 } from '@openmc-studio/schema';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { create } from 'zustand';
 import {
   detectOpenMcEnvironment,
@@ -18,6 +18,7 @@ import {
   exportProofPack,
   exportSubmissionBundle,
   generateMimoDraft,
+  liveRunStatus,
   listProofPacks,
   runOpenMc,
   summarizeStatepoint,
@@ -417,6 +418,37 @@ function RunPanel({ project }: { project: ProjectBundle }) {
   const [runLog, setRunLog] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [runHistory, setRunHistory] = useState<RunHistoryEntry[]>([]);
+  const [liveStatus, setLiveStatus] = useState<string>('idle');
+  const [liveMeta, setLiveMeta] = useState<string>('No active run');
+
+  useEffect(() => {
+    if (!projectDir.trim()) {
+      setLiveStatus('idle');
+      setLiveMeta('No active run');
+      return;
+    }
+
+    const intervalId = setInterval(async () => {
+      try {
+        const status = await liveRunStatus(projectDir.trim());
+        if (!status.ok) {
+          setLiveStatus('idle');
+          setLiveMeta(status.message ?? 'No run found');
+          return;
+        }
+
+        setLiveStatus(status.status ?? 'unknown');
+        setLiveMeta(
+          `run: ${status.runId ?? 'n/a'} | code: ${status.returnCode ?? 'n/a'} | start: ${status.startedAt ?? 'n/a'}`,
+        );
+        setRunLog([status.stdoutTail, status.stderrTail].filter(Boolean).join('\n'));
+      } catch {
+        // keep previous live data when polling fails
+      }
+    }, 2000);
+
+    return () => clearInterval(intervalId);
+  }, [projectDir]);
 
   async function refreshHistory() {
     if (!projectDir.trim()) {
@@ -474,6 +506,10 @@ function RunPanel({ project }: { project: ProjectBundle }) {
         <h2>Generated OpenMC artifacts are now traceable from the GUI model.</h2>
         <p>Next step: write these files into the project `generated` folder and launch OpenMC through the worker.</p>
         <div className="project-storage">
+          <div className="history-item">
+            <strong>Live status: {liveStatus}</strong>
+            <span>{liveMeta}</span>
+          </div>
           <label htmlFor="run-project-dir">Project directory</label>
           <input id="run-project-dir" value={projectDir} onChange={(event) => setProjectDir(event.target.value)} placeholder="Project folder to write generated inputs" />
           <label htmlFor="openmc-command">OpenMC command override</label>
