@@ -44,6 +44,11 @@ export async function healthCheckOpenMc(command?: string[]): Promise<HealthCheck
   return parseWorkerJson<HealthCheckResponse>(result);
 }
 
+export async function generateOpenMcInputs(projectDir: string): Promise<{ ok: boolean; generatedDir: string; files: string[] }> {
+  const result = await invokeWorker('generate_openmc_inputs', { request: { projectDir } });
+  return parseWorkerJson<{ ok: boolean; generatedDir: string; files: string[] }>(result);
+}
+
 async function invokeWorker(command: string, args?: Record<string, unknown>): Promise<WorkerResult> {
   try {
     return await invoke<WorkerResult>(command, args);

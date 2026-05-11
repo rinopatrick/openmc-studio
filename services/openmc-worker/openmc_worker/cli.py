@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -29,6 +30,9 @@ def main(argv: list[str] | None = None) -> int:
     health = subparsers.add_parser("health-check")
     health.add_argument("--json", default="{}")
 
+    generate = subparsers.add_parser("generate-inputs")
+    generate.add_argument("--project-dir", required=True)
+
     args = parser.parse_args(argv)
 
     if args.command == "handshake":
@@ -40,6 +44,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "health-check":
         payload = json.loads(args.json)
         return emit(health_check(payload))
+
+    if args.command == "generate-inputs":
+        return emit(generate_inputs(Path(args.project_dir)))
 
     return 2
 
@@ -119,6 +126,82 @@ def run_version_probe(base_command: list[str]) -> dict[str, Any]:
         "ok": result.returncode == 0,
         "message": output or f"Version probe exited with code {result.returncode}.",
     }
+
+
+def generate_inputs(project_dir: Path) -> dict[str, Any]:
+    model_path = project_dir / "model" / "model.json"
+    if not model_path.is_file():
+        return {"ok": False, "message": f"Model file not found: {model_path}"}
+
+    model = json.loads(model_path.read_text(encoding="utf-8"))
+    generated_dir = project_dir / "generated"
+    generated_dir.mkdir(parents=True, exist_ok=True)
+
+    artifacts = {
+        "materials.xml": generate_materials_xml(model),
+        "geometry.xml": generate_geometry_xml(model),
+        "settings.xml": generate_settings_xml(model),
+        "tallies.xml": generate_tallies_xml(model),
+    }
+
+    for filename, content in artifacts.items():
+        (generated_dir / filename).write_text(content, encoding="utf-8")
+
+    return {"ok": True, "generatedDir": str(generated_dir), "files": sorted(artifacts.keys())}
+
+
+def generate_materials_xml(model: dict[str, Any]) -> str:
+    chunks = []
+    for index, material in enumerate(model.get("materials", {}).get("materials", []), start=1):
+        chunks.append(f'  <material id="{index}" name="{xml_escape(material.get("name", "Material"))}">')
+        density = material.get("density", {})
+        chunks.append(f'    <density value="{density.get("value", 1)}" units="{xml_escape(density.get("unit", "g/cm3"))}" />')
+        for nuclide in material.get("nuclides", []):
+            attr = "ao" if nuclide.get("fractionType") == "atom" else "wo"
+            chunks.append(f'    <nuclide name="{xml_escape(nuclide.get("name", ""))}" {attr}="{nuclide.get("fraction", 0)}" />')
+        chunks.append("  </material>")
+    return xml_doc("materials", "\n".join(chunks))
+
+
+def generate_geometry_xml(model: dict[str, Any]) -> str:
+    names: list[str] = []
+
+    def visit(node: dict[str, Any]) -> None:
+        names.append(str(node.get("name", "Node")))
+        for child in node.get("children", []):
+            visit(child)
+
+    visit(model.get("root", {"name": "Root", "children": []}))
+    cells = "\n".join(f'  <cell id="{index}" name="{xml_escape(name)}" />' for index, name in enumerate(names, start=1))
+    return xml_doc("geometry", "  <!-- Preview geometry generated from OpenMC Studio hierarchy. -->\n" + cells)
+
+
+def generate_settings_xml(model: dict[str, Any]) -> str:
+    settings = model.get("settings", {})
+    mode = "fixed source" if settings.get("mode") == "fixed-source" else "eigenvalue"
+    lines = [f"  <run_mode>{mode}</run_mode>", f"  <particles>{settings.get('particles', 1000)}</particles>"]
+    if settings.get("batches"):
+        lines.append(f"  <batches>{settings['batches']}</batches>")
+    if settings.get("inactive"):
+        lines.append(f"  <inactive>{settings['inactive']}</inactive>")
+    return xml_doc("settings", "\n".join(lines))
+
+
+def generate_tallies_xml(model: dict[str, Any]) -> str:
+    chunks = []
+    for index, tally in enumerate(model.get("tallies", []), start=1):
+        chunks.append(f'  <tally id="{index}" name="{xml_escape(tally.get("name", "Tally"))}">')
+        chunks.append(f'    <scores>{" ".join(xml_escape(score) for score in tally.get("scores", []))}</scores>')
+        chunks.append("  </tally>")
+    return xml_doc("tallies", "\n".join(chunks))
+
+
+def xml_doc(root: str, body: str) -> str:
+    return f'<?xml version="1.0" encoding="UTF-8"?>\n<{root}>\n{body}\n</{root}>\n'
+
+
+def xml_escape(value: Any) -> str:
+    return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&apos;")
 
 
 def emit(payload: dict[str, Any]) -> int:

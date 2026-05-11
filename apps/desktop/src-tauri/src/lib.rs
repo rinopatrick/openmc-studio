@@ -31,6 +31,12 @@ struct LoadProjectRequest {
     directory: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerateInputsRequest {
+    project_dir: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LoadProjectResult {
@@ -91,6 +97,11 @@ fn load_project_bundle(request: LoadProjectRequest) -> Result<LoadProjectResult,
     })
 }
 
+#[tauri::command]
+fn generate_openmc_inputs(request: GenerateInputsRequest) -> Result<WorkerResult, String> {
+    run_worker(&["generate-inputs", "--project-dir"], Some(request.project_dir))
+}
+
 fn run_worker(args: &[&str], trailing_arg: Option<String>) -> Result<WorkerResult, String> {
     let worker_dir = find_worker_dir()?;
     let python = find_python_command();
@@ -149,7 +160,8 @@ pub fn run() {
             detect_openmc_environment,
             health_check_openmc,
             save_project_bundle,
-            load_project_bundle
+            load_project_bundle,
+            generate_openmc_inputs
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenMC Studio");

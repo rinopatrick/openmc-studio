@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import {
   detectOpenMcEnvironment,
   healthCheckOpenMc,
+  generateOpenMcInputs,
   workerHandshake,
   type DetectEnvironmentResponse,
   type HealthCheckResponse,
@@ -399,6 +400,23 @@ function ValidationPanel({ diagnostics }: { diagnostics: ReturnType<typeof valid
 
 function RunPanel({ project }: { project: ProjectBundle }) {
   const artifacts = useMemo(() => generateOpenMcArtifacts(project.model), [project]);
+  const [projectDir, setProjectDir] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function writeInputs() {
+    if (!projectDir.trim()) {
+      setMessage('Enter a saved project directory first.');
+      return;
+    }
+
+    try {
+      await saveProjectBundle(projectDir.trim(), project);
+      const result = await generateOpenMcInputs(projectDir.trim());
+      setMessage(`Generated ${result.files.join(', ')} in ${result.generatedDir}`);
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
 
   return (
     <section className="panel-grid">
@@ -406,6 +424,12 @@ function RunPanel({ project }: { project: ProjectBundle }) {
         <p className="eyebrow">Run orchestration</p>
         <h2>Generated OpenMC artifacts are now traceable from the GUI model.</h2>
         <p>Next step: write these files into the project `generated` folder and launch OpenMC through the worker.</p>
+        <div className="project-storage">
+          <label htmlFor="run-project-dir">Project directory</label>
+          <input id="run-project-dir" value={projectDir} onChange={(event) => setProjectDir(event.target.value)} placeholder="Project folder to write generated inputs" />
+          <button className="primary-action" onClick={writeInputs}>Write generated OpenMC inputs</button>
+          {message && <p className="muted">{message}</p>}
+        </div>
       </article>
       <article className="card artifact-preview">
         <h3>settings.xml preview</h3>
