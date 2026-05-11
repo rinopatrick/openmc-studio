@@ -68,6 +68,15 @@ export interface RunHistoryEntry {
   runDir: string;
 }
 
+export interface ResultsSummary {
+  totalRuns: number;
+  successfulRuns: number;
+  failedRuns: number;
+  latestRunId?: string | null;
+  latestReturnCode?: number | null;
+  latestStartedAt?: string | null;
+}
+
 export async function runOpenMc(projectDir: string, command?: string[]): Promise<OpenMcRunResult> {
   const result = await invokeWorker('run_openmc', { request: { projectDir, command, timeoutSeconds: 3600 } });
   return parseWorkerJson<OpenMcRunResult>(result);
@@ -79,6 +88,17 @@ export async function listRunHistory(projectDir: string): Promise<RunHistoryEntr
   } catch {
     return [];
   }
+}
+
+export async function summarizeResults(projectDir: string): Promise<ResultsSummary> {
+  const result = await invokeWorker('summarize_results', { request: { projectDir } });
+  const parsed = parseWorkerJson<{ ok: boolean; summary: ResultsSummary }>(result);
+  return parsed.summary;
+}
+
+export async function exportProofPack(projectDir: string, repoUrl: string): Promise<{ ok: boolean; proofPackDir: string }> {
+  const result = await invokeWorker('export_proof_pack', { request: { projectDir, repoUrl } });
+  return parseWorkerJson<{ ok: boolean; proofPackDir: string }>(result);
 }
 
 async function invokeWorker(command: string, args?: Record<string, unknown>): Promise<WorkerResult> {

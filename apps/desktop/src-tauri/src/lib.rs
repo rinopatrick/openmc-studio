@@ -45,6 +45,19 @@ struct RunOpenMcRequest {
     timeout_seconds: Option<u64>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResultsSummaryRequest {
+    project_dir: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProofPackRequest {
+    project_dir: String,
+    repo_url: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LoadProjectResult {
@@ -138,6 +151,20 @@ fn run_openmc(request: RunOpenMcRequest) -> Result<WorkerResult, String> {
     run_worker(
         &["run-openmc", "--project-dir", request.project_dir.as_str(), "--json"],
         Some(payload),
+    )
+}
+
+#[tauri::command]
+fn summarize_results(request: ResultsSummaryRequest) -> Result<WorkerResult, String> {
+    run_worker(&["summarize-results", "--project-dir"], Some(request.project_dir))
+}
+
+#[tauri::command]
+fn export_proof_pack(request: ProofPackRequest) -> Result<WorkerResult, String> {
+    let repo_url = request.repo_url.unwrap_or_default();
+    run_worker(
+        &["export-proof-pack", "--project-dir", request.project_dir.as_str(), "--repo-url"],
+        Some(repo_url),
     )
 }
 
@@ -244,7 +271,9 @@ pub fn run() {
             load_project_bundle,
             generate_openmc_inputs,
             run_openmc,
-            list_run_history
+            list_run_history,
+            summarize_results,
+            export_proof_pack
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenMC Studio");

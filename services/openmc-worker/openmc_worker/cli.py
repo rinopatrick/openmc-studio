@@ -38,6 +38,13 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--project-dir", required=True)
     run.add_argument("--json", default="{}")
 
+    summarize = subparsers.add_parser("summarize-results")
+    summarize.add_argument("--project-dir", required=True)
+
+    proof = subparsers.add_parser("export-proof-pack")
+    proof.add_argument("--project-dir", required=True)
+    proof.add_argument("--repo-url", default="")
+
     args = parser.parse_args(argv)
 
     if args.command == "handshake":
@@ -56,6 +63,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run-openmc":
         payload = json.loads(args.json)
         return emit(run_openmc(Path(args.project_dir), payload))
+
+    if args.command == "summarize-results":
+        return emit(summarize_results(Path(args.project_dir)))
+
+    if args.command == "export-proof-pack":
+        return emit(export_proof_pack(Path(args.project_dir), args.repo_url))
 
     return 2
 
@@ -285,6 +298,78 @@ def xml_escape(value: Any) -> str:
 
 def tail(value: str, limit: int = 4000) -> str:
     return value[-limit:]
+
+
+def summarize_results(project_dir: Path) -> dict[str, Any]:
+    runs_dir = project_dir / "runs"
+    if not runs_dir.is_dir():
+        return {"ok": True, "summary": {"totalRuns": 0, "successfulRuns": 0, "failedRuns": 0, "latestRunId": None}}
+
+    manifests: list[dict[str, Any]] = []
+    for child in runs_dir.iterdir():
+        manifest_path = child / "manifest.json"
+        if child.is_dir() and manifest_path.is_file():
+            try:
+                manifests.append(json.loads(manifest_path.read_text(encoding="utf-8")))
+            except json.JSONDecodeError:
+                continue
+
+    manifests.sort(key=lambda item: str(item.get("runId", "")), reverse=True)
+    total = len(manifests)
+    successful = sum(1 for item in manifests if item.get("ok"))
+    failed = total - successful
+    latest = manifests[0] if manifests else None
+
+    return {
+        "ok": True,
+        "summary": {
+            "totalRuns": total,
+            "successfulRuns": successful,
+            "failedRuns": failed,
+            "latestRunId": latest.get("runId") if latest else None,
+            "latestReturnCode": latest.get("returnCode") if latest else None,
+            "latestStartedAt": latest.get("startedAt") if latest else None,
+        },
+    }
+
+
+def export_proof_pack(project_dir: Path, repo_url: str) -> dict[str, Any]:
+    summary = summarize_results(project_dir).get("summary", {})
+    proof_dir = project_dir / "reports" / f"proof-pack-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    proof_dir.mkdir(parents=True, exist_ok=True)
+
+    checklist = {
+        "title": "OpenMC Studio Proof of Use Pack",
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "projectDir": str(project_dir),
+        "repoUrl": repo_url,
+        "runSummary": summary,
+        "artifacts": [
+            "project.json",
+            "model/model.json",
+            "generated/*.xml",
+            "runs/*/manifest.json",
+            "runs/*/stdout.log",
+            "runs/*/stderr.log",
+        ],
+        "recommendedUploads": [
+            "Terminal screenshot showing npm test and build passing",
+            "UI screenshot: Environment, Model, Validation, Run, Results tabs",
+            "Run history screenshot with at least one completed run",
+            "GitHub repo URL and recent commits",
+        ],
+    }
+
+    (proof_dir / "proof-checklist.json").write_text(json.dumps(checklist, indent=2), encoding="utf-8")
+    (proof_dir / "mimo-answer-template.txt").write_text(
+        """04. Specific results:\n"
+"I built OpenMC Studio, a lightweight AI-assisted desktop GUI that removes OpenMC's coding barrier by enabling visual model setup, validation, run orchestration, and reproducible artifacts."
+"\n\n05. Proof of use:\n"
+"Attach proof-checklist.json outputs, terminal logs, run manifests, and repository URL.\n""",
+        encoding="utf-8",
+    )
+
+    return {"ok": True, "proofPackDir": str(proof_dir), "summary": summary}
 
 
 def emit(payload: dict[str, Any]) -> int:

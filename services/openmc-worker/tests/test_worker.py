@@ -6,7 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from openmc_worker.cli import detect_candidates, generate_inputs, health_check, run_openmc
+from openmc_worker.cli import detect_candidates, export_proof_pack, generate_inputs, health_check, run_openmc, summarize_results
 
 
 class WorkerTests(unittest.TestCase):
@@ -60,6 +60,32 @@ class WorkerTests(unittest.TestCase):
             result = run_openmc(root, {"command": [sys.executable, "-c", "print('openmc stub')"]})
             self.assertTrue(result["ok"])
             self.assertTrue((Path(result["runDir"]) / "manifest.json").is_file())
+
+    def test_result_summary_and_proof_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            model_dir = root / "model"
+            model_dir.mkdir(parents=True)
+            (model_dir / "model.json").write_text(
+                json.dumps(
+                    {
+                        "materials": {"materials": []},
+                        "root": {"name": "Root", "children": []},
+                        "settings": {"mode": "eigenvalue", "particles": 1000},
+                        "tallies": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            run_openmc(root, {"command": [sys.executable, "-c", "print('openmc stub')"]})
+            summary = summarize_results(root)
+            self.assertTrue(summary["ok"])
+            self.assertGreaterEqual(summary["summary"]["totalRuns"], 1)
+
+            proof = export_proof_pack(root, "https://github.com/rinopatrick/openmc-studio")
+            self.assertTrue(proof["ok"])
+            self.assertTrue((Path(proof["proofPackDir"]) / "proof-checklist.json").is_file())
 
 
 if __name__ == "__main__":

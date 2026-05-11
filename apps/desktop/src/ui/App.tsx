@@ -15,7 +15,9 @@ import {
   healthCheckOpenMc,
   generateOpenMcInputs,
   listRunHistory,
+  exportProofPack,
   runOpenMc,
+  summarizeResults,
   workerHandshake,
   type DetectEnvironmentResponse,
   type HealthCheckResponse,
@@ -106,7 +108,7 @@ export function App() {
         {step === 'model' && <ModelPanel project={project} />}
         {step === 'validate' && <ValidationPanel diagnostics={diagnostics} />}
         {step === 'run' && <RunPanel project={project} />}
-        {step === 'results' && <ResultsPanel />}
+        {step === 'results' && <ResultsPanel project={project} />}
       </section>
     </main>
   );
@@ -507,7 +509,43 @@ function splitCommand(command: string): string[] {
   return command.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((part) => part.replace(/^"|"$/g, '')) ?? [command];
 }
 
-function ResultsPanel() {
+function ResultsPanel({ project }: { project: ProjectBundle }) {
+  const [projectDir, setProjectDir] = useState('');
+  const [summary, setSummary] = useState<string | null>(null);
+  const [proofMessage, setProofMessage] = useState<string | null>(null);
+
+  async function loadSummary() {
+    if (!projectDir.trim()) {
+      setSummary('Enter a project directory first.');
+      return;
+    }
+
+    try {
+      await saveProjectBundle(projectDir.trim(), project);
+      const value = await summarizeResults(projectDir.trim());
+      setSummary(
+        `Runs: ${value.totalRuns}, success: ${value.successfulRuns}, failed: ${value.failedRuns}, latest: ${value.latestRunId ?? 'n/a'}`,
+      );
+    } catch (caught) {
+      setSummary(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
+  async function generateProofPack() {
+    if (!projectDir.trim()) {
+      setProofMessage('Enter a project directory first.');
+      return;
+    }
+
+    try {
+      await saveProjectBundle(projectDir.trim(), project);
+      const result = await exportProofPack(projectDir.trim(), 'https://github.com/rinopatrick/openmc-studio');
+      setProofMessage(`Proof pack created at ${result.proofPackDir}`);
+    } catch (caught) {
+      setProofMessage(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
   return (
     <section className="panel-grid">
       <article className="card">
@@ -515,8 +553,18 @@ function ResultsPanel() {
         <p>k-eff trend, rolling sigma, entropy stabilization, and convergence score.</p>
       </article>
       <article className="card">
-        <h3>Fixed-source metrics</h3>
-        <p>Attenuation, transmission, flux ratios, hotspot summary, and dose-proxy index.</p>
+        <h3>Results and proof tools</h3>
+        <p>Summarize run history and export Mimo100T proof pack artifacts from the project folder.</p>
+        <div className="project-storage">
+          <label htmlFor="results-project-dir">Project directory</label>
+          <input id="results-project-dir" value={projectDir} onChange={(event) => setProjectDir(event.target.value)} placeholder="Project folder path" />
+          <div className="action-row compact">
+            <button className="secondary-action" onClick={loadSummary}>Load run summary</button>
+            <button className="primary-action" onClick={generateProofPack}>Export proof pack</button>
+          </div>
+          {summary && <p className="muted">{summary}</p>}
+          {proofMessage && <p className="muted">{proofMessage}</p>}
+        </div>
       </article>
     </section>
   );
