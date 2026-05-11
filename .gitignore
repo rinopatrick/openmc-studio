@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.vite/
+.turbo/
+__pycache__/
+*.pyc
+.venv/
+.env
+target/
+*.log
+*.tmp
+runs/
+generated/

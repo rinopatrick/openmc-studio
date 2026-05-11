@@ -1,0 +1,20 @@
+{
+  "name": "openmc-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lightweight desktop GUI for OpenMC reactor and shielding workflows.",
+  "workspaces": [
+    "apps/desktop",
+    "packages/schema"
+  ],
+  "scripts": {
+    "dev": "npm --workspace apps/desktop run dev",
+    "build": "npm --workspace packages/schema run build && npm --workspace apps/desktop run build",
+    "typecheck": "npm --workspace packages/schema run typecheck && npm --workspace apps/desktop run typecheck",
+    "test": "npm --workspace packages/schema run test && cd services/openmc-worker && python3 -m unittest discover -s tests"
+  },
+  "engines": {
+    "node": ">=20",
+    "python": ">=3.10"
+  }
+}

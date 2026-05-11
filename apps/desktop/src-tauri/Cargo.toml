@@ -1,0 +1,19 @@
+[package]
+name = "openmc-studio"
+version = "0.1.0"
+description = "Lightweight desktop GUI for OpenMC"
+authors = ["OpenMC Studio Contributors"]
+license = "MIT"
+edition = "2021"
+
+[lib]
+name = "openmc_studio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
