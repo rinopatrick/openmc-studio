@@ -317,7 +317,8 @@ code {
   justify-content: space-between;
 }
 
-.mock-canvas {
+.mock-canvas,
+.lattice-canvas {
   height: 190px;
   border: 1px solid rgba(94, 234, 212, 0.22);
   border-radius: 18px;
@@ -327,10 +328,60 @@ code {
     linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
 }
 
+.lattice-canvas {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+  padding: 14px;
+  height: 220px;
+}
+
+.lattice-canvas.hex .lattice-cell:nth-child(2n) {
+  transform: translateY(12px);
+}
+
+.lattice-canvas.section {
+  align-content: end;
+}
+
+.lattice-cell {
+  min-height: 42px;
+  border: 1px solid color-mix(in srgb, var(--cell-color) 70%, white 0%);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--cell-color) 32%, transparent);
+  color: #edf4ff;
+  cursor: pointer;
+}
+
+.lattice-cell.selected {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.lattice-cell span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+}
+
+.empty-canvas {
+  display: grid;
+  place-items: center;
+  color: #94a3b8;
+}
+
 .model-summary {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: 14px;
+}
+
+.inspector {
+  display: grid;
+  gap: 10px;
   margin-top: 14px;
 }
 

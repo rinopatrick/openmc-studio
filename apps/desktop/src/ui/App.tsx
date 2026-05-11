@@ -17,6 +17,7 @@ import {
   type HealthCheckResponse,
   type OpenMcCandidate,
 } from '../tauri/worker.js';
+import { LatticeCanvas } from './LatticeCanvas.js';
 
 type StudioStep = 'environment' | 'model' | 'validate' | 'run' | 'results';
 
@@ -25,6 +26,8 @@ interface StudioState {
   project: ProjectBundle;
   setStep: (step: StudioStep) => void;
   createProjectFromPreset: (presetId: string) => void;
+  selectedCell?: string;
+  setSelectedCell: (selectedCell: string) => void;
 }
 
 const useStudioState = create<StudioState>((set) => ({
@@ -36,6 +39,7 @@ const useStudioState = create<StudioState>((set) => ({
     now: new Date().toISOString(),
   }),
   setStep: (step) => set({ step }),
+  setSelectedCell: (selectedCell) => set({ selectedCell }),
   createProjectFromPreset: (presetId) =>
     set({
       step: 'model',
@@ -235,6 +239,9 @@ function HealthCheckList({ health }: { health: HealthCheckResponse }) {
 
 function ModelPanel({ project }: { project: ProjectBundle }) {
   const createPresetProject = useStudioState((state) => state.createProjectFromPreset);
+  const selectedCell = useStudioState((state) => state.selectedCell);
+  const setSelectedCell = useStudioState((state) => state.setSelectedCell);
+  const lattice = project.model.lattices[0];
 
   return (
     <section className="canvas-layout">
@@ -256,7 +263,7 @@ function ModelPanel({ project }: { project: ProjectBundle }) {
           <h3>Top View</h3>
           <span>{project.model.lattices[0]?.kind ?? 'Freeform'} layout</span>
         </div>
-        <div className="mock-canvas top-view" />
+        <LatticeCanvas lattice={lattice} view="top" selectedCell={selectedCell} onSelectCell={setSelectedCell} />
         <ModelSummary project={project} />
       </article>
       <article className="card canvas-card">
@@ -264,7 +271,8 @@ function ModelPanel({ project }: { project: ProjectBundle }) {
           <h3>Sectional View</h3>
           <span>Synced selection</span>
         </div>
-        <div className="mock-canvas section-view" />
+        <LatticeCanvas lattice={lattice} view="section" selectedCell={selectedCell} onSelectCell={setSelectedCell} />
+        <Inspector project={project} selectedCell={selectedCell} />
       </article>
     </section>
   );
@@ -292,6 +300,29 @@ function ModelSummary({ project }: { project: ProjectBundle }) {
       <span>{project.model.materials.materials.length} materials</span>
       <span>{lattice ? `${lattice.kind} lattice (${lattice.map.length} rows)` : 'no lattice'}</span>
       <span>{project.model.settings.mode}</span>
+    </div>
+  );
+}
+
+function Inspector({ project, selectedCell }: { project: ProjectBundle; selectedCell?: string }) {
+  const lattice = project.model.lattices[0];
+  const selectedLabel = selectedCell ? selectedCell.split('-').slice(2).join('-') || 'empty' : 'Nothing selected';
+
+  return (
+    <div className="inspector">
+      <h4>Inspector</h4>
+      <div className="status-line">
+        <span>Selection</span>
+        <strong>{selectedLabel}</strong>
+      </div>
+      <div className="status-line">
+        <span>Lattice</span>
+        <strong>{lattice?.name ?? 'None'}</strong>
+      </div>
+      <div className="status-line">
+        <span>Physics</span>
+        <strong>{project.model.settings.mode}</strong>
+      </div>
     </div>
   );
 }
