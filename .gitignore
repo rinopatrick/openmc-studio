@@ -8,6 +8,7 @@ __pycache__/
 .venv/
 .env
 target/
+apps/desktop/src-tauri/gen/
 *.log
 *.tmp
 runs/

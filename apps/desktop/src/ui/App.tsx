@@ -1,17 +1,48 @@
-import { validateModelBasics, type ReactorModel } from '@openmc-studio/schema';
-import { useMemo } from 'react';
+import {
+  createProjectBundle,
+  validateModelBasics,
+  type ProjectBundle,
+  type ReactorFamily,
+  type ReactorModel,
+} from '@openmc-studio/schema';
+import { useMemo, useState } from 'react';
 import { create } from 'zustand';
+import {
+  detectOpenMcEnvironment,
+  healthCheckOpenMc,
+  workerHandshake,
+  type DetectEnvironmentResponse,
+  type HealthCheckResponse,
+  type OpenMcCandidate,
+} from '../tauri/worker.js';
 
 type StudioStep = 'environment' | 'model' | 'validate' | 'run' | 'results';
 
 interface StudioState {
   step: StudioStep;
+  project: ProjectBundle;
   setStep: (step: StudioStep) => void;
+  createProject: (family: ReactorFamily) => void;
 }
 
 const useStudioState = create<StudioState>((set) => ({
   step: 'environment',
+  project: createProjectBundle({
+    id: 'scratch',
+    name: 'Scratch Project',
+    family: 'custom-irregular',
+    now: new Date().toISOString(),
+  }),
   setStep: (step) => set({ step }),
+  createProject: (family) =>
+    set({
+      step: 'model',
+      project: createProjectBundle({
+        id: crypto.randomUUID(),
+        name: defaultProjectName(family),
+        family,
+      }),
+    }),
 }));
 
 const sampleModel: ReactorModel = {
@@ -28,8 +59,8 @@ const sampleModel: ReactorModel = {
 };
 
 export function App() {
-  const { step, setStep } = useStudioState();
-  const diagnostics = useMemo(() => validateModelBasics(sampleModel), []);
+  const { step, project, setStep } = useStudioState();
+  const diagnostics = useMemo(() => validateModelBasics(project.model), [project]);
 
   return (
     <main className="studio-shell">
@@ -55,16 +86,32 @@ export function App() {
             <p className="eyebrow">Lightweight desktop foundation</p>
             <h1>{labelForStep(step)}</h1>
           </div>
-          <span className="status-pill">Sprint 1 scaffold</span>
+          <span className="status-pill">{project.manifest.name}</span>
         </header>
         {step === 'environment' && <EnvironmentPanel />}
-        {step === 'model' && <ModelPanel />}
+        {step === 'model' && <ModelPanel project={project} />}
         {step === 'validate' && <ValidationPanel diagnostics={diagnostics} />}
         {step === 'run' && <RunPanel />}
         {step === 'results' && <ResultsPanel />}
       </section>
     </main>
   );
+}
+
+function defaultProjectName(family: ReactorFamily): string {
+  return {
+    pwr: 'PWR Project',
+    bwr: 'BWR Project',
+    'phwr-candu': 'PHWR/CANDU Project',
+    htgr: 'HTGR Project',
+    sfr: 'SFR Project',
+    lfr: 'LFR Project',
+    msr: 'MSR Project',
+    smr: 'SMR Project',
+    research: 'Research Reactor Project',
+    'shielding-fixed-source': 'Shielding Project',
+    'custom-irregular': 'Custom Irregular Reactor',
+  }[family];
 }
 
 function labelForStep(step: StudioStep): string {
@@ -78,6 +125,44 @@ function labelForStep(step: StudioStep): string {
 }
 
 function EnvironmentPanel() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [workerStatus, setWorkerStatus] = useState<string>('Not checked');
+  const [detected, setDetected] = useState<DetectEnvironmentResponse | null>(null);
+  const [selectedCommand, setSelectedCommand] = useState<string[] | undefined>();
+  const [health, setHealth] = useState<HealthCheckResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function runDetection() {
+    setIsLoading(true);
+    setError(null);
+    setHealth(null);
+
+    try {
+      const handshake = await workerHandshake();
+      setWorkerStatus(handshake.ok ? 'Worker online' : `Worker unavailable: ${handshake.stderr || handshake.stdout}`);
+      const response = await detectOpenMcEnvironment();
+      setDetected(response);
+      setSelectedCommand(response.candidates[0]?.command);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function runHealthCheck(command = selectedCommand) {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      setHealth(await healthCheckOpenMc(command));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   return (
     <section className="panel-grid">
       <article className="card hero-card">
@@ -87,26 +172,97 @@ function EnvironmentPanel() {
           The desktop shell will call the on-demand Python worker to detect PATH, Python module, conda, cross sections,
           and manual profiles.
         </p>
+        <div className="action-row">
+          <button className="primary-action" disabled={isLoading} onClick={runDetection}>
+            {isLoading ? 'Checking...' : 'Detect OpenMC'}
+          </button>
+          <button className="secondary-action" disabled={isLoading || !selectedCommand} onClick={() => runHealthCheck()}>
+            Run health check
+          </button>
+        </div>
+        {error && <p className="error-text">{error}</p>}
       </article>
       <article className="card checklist">
-        <h3>Health checks</h3>
-        <ul>
-          <li>OpenMC executable or Python module</li>
-          <li>Cross-section library</li>
-          <li>Version probe</li>
-          <li>Sample smoke run</li>
-        </ul>
+        <h3>Environment status</h3>
+        <div className="status-stack">
+          <StatusLine label="Worker" value={workerStatus} ok={workerStatus === 'Worker online'} />
+          <StatusLine label="Cross sections" value={detected?.crossSections ?? 'Not detected yet'} ok={Boolean(detected?.crossSections)} />
+        </div>
+        <CandidateList candidates={detected?.candidates ?? []} selectedCommand={selectedCommand} onSelect={setSelectedCommand} />
+        {health && <HealthCheckList health={health} />}
       </article>
     </section>
   );
 }
 
-function ModelPanel() {
+function StatusLine({ label, value, ok }: { label: string; value: string; ok: boolean }) {
+  return (
+    <div className="status-line">
+      <span>{label}</span>
+      <strong className={ok ? 'good' : 'muted'}>{value}</strong>
+    </div>
+  );
+}
+
+function CandidateList({
+  candidates,
+  selectedCommand,
+  onSelect,
+}: {
+  candidates: OpenMcCandidate[];
+  selectedCommand?: string[];
+  onSelect: (command: string[]) => void;
+}) {
+  if (candidates.length === 0) {
+    return <p className="muted">No OpenMC candidates detected yet.</p>;
+  }
+
+  return (
+    <div className="candidate-list">
+      <h4>Detected candidates</h4>
+      {candidates.map((candidate) => {
+        const selected = selectedCommand?.join('\u0000') === candidate.command.join('\u0000');
+        return (
+          <button key={`${candidate.kind}-${candidate.command.join(' ')}`} className={selected ? 'candidate selected' : 'candidate'} onClick={() => onSelect(candidate.command)}>
+            <span>{candidate.label}</span>
+            <code>{candidate.command.join(' ')}</code>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function HealthCheckList({ health }: { health: HealthCheckResponse }) {
+  return (
+    <div className="health-list">
+      <h4>Health checks</h4>
+      {health.checks.map((check) => (
+        <div key={check.id} className={check.ok ? 'health-check good-border' : 'health-check warn-border'}>
+          <strong>{check.ok ? 'OK' : 'Check'}</strong>
+          <span>{check.message}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ModelPanel({ project }: { project: ProjectBundle }) {
+  const createProject = useStudioState((state) => state.createProject);
+
   return (
     <section className="canvas-layout">
       <article className="card tree-card">
         <h3>Hierarchy</h3>
-        <div className="tree-node">Core</div>
+        <p className="muted">{project.model.family}</p>
+        <div className="preset-grid">
+          {(['pwr', 'bwr', 'phwr-candu', 'htgr', 'sfr', 'lfr', 'msr', 'smr', 'research', 'shielding-fixed-source', 'custom-irregular'] as ReactorFamily[]).map((family) => (
+            <button key={family} className="preset-button" onClick={() => createProject(family)}>
+              {defaultProjectName(family)}
+            </button>
+          ))}
+        </div>
+        <div className="tree-node">{project.model.root.name}</div>
         <div className="tree-node child">Assembly / Block / Region</div>
         <div className="tree-node child">Pin / Cell / Custom shape</div>
       </article>
