@@ -11,6 +11,7 @@ from openmc_worker.cli import (
     export_proof_pack,
     generate_inputs,
     health_check,
+    list_proof_packs,
     run_openmc,
     summarize_results,
     summarize_statepoint,
@@ -94,6 +95,9 @@ class WorkerTests(unittest.TestCase):
             proof = export_proof_pack(root, "https://github.com/rinopatrick/openmc-studio")
             self.assertTrue(proof["ok"])
             self.assertTrue((Path(proof["proofPackDir"]) / "proof-checklist.json").is_file())
+            packs = list_proof_packs(root)
+            self.assertTrue(packs["ok"])
+            self.assertGreaterEqual(len(packs["proofPacks"]), 1)
 
     def test_summarize_statepoint_graceful_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

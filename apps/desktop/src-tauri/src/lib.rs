@@ -64,6 +64,12 @@ struct StatepointSummaryRequest {
     project_dir: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListProofPacksRequest {
+    project_dir: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LoadProjectResult {
@@ -180,6 +186,11 @@ fn summarize_statepoint(request: StatepointSummaryRequest) -> Result<WorkerResul
 }
 
 #[tauri::command]
+fn list_proof_packs(request: ListProofPacksRequest) -> Result<WorkerResult, String> {
+    run_worker(&["list-proof-packs", "--project-dir"], Some(request.project_dir))
+}
+
+#[tauri::command]
 fn list_run_history(request: ListRunsRequest) -> Result<Vec<RunHistoryEntry>, String> {
     let runs_dir = PathBuf::from(request.project_dir).join("runs");
     if !runs_dir.is_dir() {
@@ -285,7 +296,8 @@ pub fn run() {
             list_run_history,
             summarize_results,
             export_proof_pack,
-            summarize_statepoint
+            summarize_statepoint,
+            list_proof_packs
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenMC Studio");

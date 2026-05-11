@@ -16,6 +16,7 @@ import {
   generateOpenMcInputs,
   listRunHistory,
   exportProofPack,
+  listProofPacks,
   runOpenMc,
   summarizeStatepoint,
   summarizeResults,
@@ -25,6 +26,7 @@ import {
   type OpenMcCandidate,
   type RunHistoryEntry,
   type StatepointSummary,
+  type ProofPackEntry,
 } from '../tauri/worker.js';
 import { loadProjectBundle, saveProjectBundle } from '../tauri/projectStorage.js';
 import { LatticeCanvas } from './LatticeCanvas.js';
@@ -516,6 +518,8 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
   const [summary, setSummary] = useState<string | null>(null);
   const [statepointSummary, setStatepointSummary] = useState<StatepointSummary | null>(null);
   const [proofMessage, setProofMessage] = useState<string | null>(null);
+  const [history, setHistory] = useState<RunHistoryEntry[]>([]);
+  const [proofPacks, setProofPacks] = useState<ProofPackEntry[]>([]);
 
   async function loadSummary() {
     if (!projectDir.trim()) {
@@ -529,6 +533,7 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
       setSummary(
         `Runs: ${value.totalRuns}, success: ${value.successfulRuns}, failed: ${value.failedRuns}, latest: ${value.latestRunId ?? 'n/a'}`,
       );
+      setHistory(await listRunHistory(projectDir.trim()));
     } catch (caught) {
       setSummary(caught instanceof Error ? caught.message : String(caught));
     }
@@ -544,9 +549,18 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
       await saveProjectBundle(projectDir.trim(), project);
       const result = await exportProofPack(projectDir.trim(), 'https://github.com/rinopatrick/openmc-studio');
       setProofMessage(`Proof pack created at ${result.proofPackDir}`);
+      setProofPacks(await listProofPacks(projectDir.trim()));
     } catch (caught) {
       setProofMessage(caught instanceof Error ? caught.message : String(caught));
     }
+  }
+
+  async function refreshProofPacks() {
+    if (!projectDir.trim()) {
+      setProofPacks([]);
+      return;
+    }
+    setProofPacks(await listProofPacks(projectDir.trim()));
   }
 
   async function loadStatepointSummary() {
@@ -585,8 +599,10 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
             <button className="secondary-action" onClick={loadSummary}>Load run summary</button>
             <button className="secondary-action" onClick={loadStatepointSummary}>Load statepoint summary</button>
             <button className="primary-action" onClick={generateProofPack}>Export proof pack</button>
+            <button className="secondary-action" onClick={refreshProofPacks}>List proof packs</button>
           </div>
           {summary && <p className="muted">{summary}</p>}
+          <RunTrendChart history={history} />
           {statepointSummary && (
             <div className="history-item">
               <strong>Latest statepoint</strong>
@@ -598,8 +614,59 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
             </div>
           )}
           {proofMessage && <p className="muted">{proofMessage}</p>}
+          {proofPacks.length > 0 && (
+            <div className="history-list">
+              {proofPacks.map((pack) => (
+                <div key={pack.name} className="history-item">
+                  <strong>{pack.name}</strong>
+                  <span>{pack.path}</span>
+                  <span>{pack.modifiedAt}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="history-item">
+            <strong>Submit-ready checklist</strong>
+            <span>1. Run `Load run summary` and ensure at least one successful run.</span>
+            <span>2. Run `Load statepoint summary` and capture screenshot.</span>
+            <span>3. Run `Export proof pack` and attach generated files.</span>
+            <span>4. Submit GitHub public URL + terminal verification screenshots.</span>
+          </div>
         </div>
       </article>
     </section>
+  );
+}
+
+function RunTrendChart({ history }: { history: RunHistoryEntry[] }) {
+  if (history.length === 0) {
+    return <p className="muted">No run history loaded yet.</p>;
+  }
+
+  const points = [...history].reverse().map((entry, index) => ({
+    x: index,
+    y: entry.ok ? 1 : 0,
+  }));
+
+  const width = 420;
+  const height = 130;
+  const xScale = (index: number) => (points.length === 1 ? width / 2 : (index / (points.length - 1)) * (width - 20) + 10);
+  const yScale = (value: number) => (value === 1 ? 24 : height - 24);
+  const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${xScale(point.x)} ${yScale(point.y)}`).join(' ');
+
+  return (
+    <div className="trend-chart">
+      <strong>Run success trend</strong>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Run success trend chart">
+        <line x1="10" y1={height - 24} x2={width - 10} y2={height - 24} className="axis" />
+        <line x1="10" y1="24" x2={width - 10} y2="24" className="axis" />
+        <path d={path} className="trend-line" />
+        {points.map((point, index) => (
+          <circle key={`${point.x}-${point.y}`} cx={xScale(point.x)} cy={yScale(point.y)} r="3.5" className={point.y ? 'trend-ok' : 'trend-fail'}>
+            <title>{history[index].runId}: {point.y ? 'OK' : 'FAILED'}</title>
+          </circle>
+        ))}
+      </svg>
+    </div>
   );
 }

@@ -48,6 +48,9 @@ def main(argv: list[str] | None = None) -> int:
     proof.add_argument("--project-dir", required=True)
     proof.add_argument("--repo-url", default="")
 
+    proof_list = subparsers.add_parser("list-proof-packs")
+    proof_list.add_argument("--project-dir", required=True)
+
     args = parser.parse_args(argv)
 
     if args.command == "handshake":
@@ -75,6 +78,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "export-proof-pack":
         return emit(export_proof_pack(Path(args.project_dir), args.repo_url))
+
+    if args.command == "list-proof-packs":
+        return emit(list_proof_packs(Path(args.project_dir)))
 
     return 2
 
@@ -376,6 +382,29 @@ def export_proof_pack(project_dir: Path, repo_url: str) -> dict[str, Any]:
     )
 
     return {"ok": True, "proofPackDir": str(proof_dir), "summary": summary}
+
+
+def list_proof_packs(project_dir: Path) -> dict[str, Any]:
+    reports_dir = project_dir / "reports"
+    if not reports_dir.is_dir():
+        return {"ok": True, "proofPacks": []}
+
+    packs: list[dict[str, Any]] = []
+    for child in reports_dir.iterdir():
+        if not child.is_dir() or not child.name.startswith("proof-pack-"):
+            continue
+        checklist = child / "proof-checklist.json"
+        packs.append(
+            {
+                "name": child.name,
+                "path": str(child),
+                "hasChecklist": checklist.is_file(),
+                "modifiedAt": datetime.fromtimestamp(child.stat().st_mtime, tz=timezone.utc).isoformat(),
+            }
+        )
+
+    packs.sort(key=lambda item: item["name"], reverse=True)
+    return {"ok": True, "proofPacks": packs}
 
 
 def summarize_statepoint(project_dir: Path) -> dict[str, Any]:

@@ -87,6 +87,13 @@ export interface StatepointSummary {
   parseWarning?: string;
 }
 
+export interface ProofPackEntry {
+  name: string;
+  path: string;
+  hasChecklist: boolean;
+  modifiedAt: string;
+}
+
 export async function runOpenMc(projectDir: string, command?: string[]): Promise<OpenMcRunResult> {
   const result = await invokeWorker('run_openmc', { request: { projectDir, command, timeoutSeconds: 3600 } });
   return parseWorkerJson<OpenMcRunResult>(result);
@@ -114,6 +121,12 @@ export async function exportProofPack(projectDir: string, repoUrl: string): Prom
 export async function summarizeStatepoint(projectDir: string): Promise<{ ok: boolean; message?: string; summary?: StatepointSummary | null }> {
   const result = await invokeWorker('summarize_statepoint', { request: { projectDir } });
   return parseWorkerJson<{ ok: boolean; message?: string; summary?: StatepointSummary | null }>(result);
+}
+
+export async function listProofPacks(projectDir: string): Promise<ProofPackEntry[]> {
+  const result = await invokeWorker('list_proof_packs', { request: { projectDir } });
+  const parsed = parseWorkerJson<{ ok: boolean; proofPacks: ProofPackEntry[] }>(result);
+  return parsed.proofPacks;
 }
 
 async function invokeWorker(command: string, args?: Record<string, unknown>): Promise<WorkerResult> {
