@@ -77,6 +77,13 @@ struct SubmissionBundleRequest {
     repo_url: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MimoDraftRequest {
+    project_dir: String,
+    repo_url: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LoadProjectResult {
@@ -96,6 +103,8 @@ struct RunHistoryEntry {
     run_id: String,
     ok: Option<bool>,
     return_code: Option<i64>,
+    k_effective: Option<f64>,
+    k_std_dev: Option<f64>,
     started_at: Option<String>,
     ended_at: Option<String>,
     run_dir: String,
@@ -207,6 +216,15 @@ fn export_submission_bundle(request: SubmissionBundleRequest) -> Result<WorkerRe
 }
 
 #[tauri::command]
+fn generate_mimo_draft(request: MimoDraftRequest) -> Result<WorkerResult, String> {
+    let repo_url = request.repo_url.unwrap_or_default();
+    run_worker(
+        &["generate-mimo-draft", "--project-dir", request.project_dir.as_str(), "--repo-url"],
+        Some(repo_url),
+    )
+}
+
+#[tauri::command]
 fn list_run_history(request: ListRunsRequest) -> Result<Vec<RunHistoryEntry>, String> {
     let runs_dir = PathBuf::from(request.project_dir).join("runs");
     if !runs_dir.is_dir() {
@@ -238,6 +256,8 @@ fn list_run_history(request: ListRunsRequest) -> Result<Vec<RunHistoryEntry>, St
                 .to_string(),
             ok: value.get("ok").and_then(serde_json::Value::as_bool),
             return_code: value.get("returnCode").and_then(serde_json::Value::as_i64),
+            k_effective: value.get("kEffective").and_then(serde_json::Value::as_f64),
+            k_std_dev: value.get("kStdDev").and_then(serde_json::Value::as_f64),
             started_at: value.get("startedAt").and_then(serde_json::Value::as_str).map(ToString::to_string),
             ended_at: value.get("endedAt").and_then(serde_json::Value::as_str).map(ToString::to_string),
             run_dir: path.to_string_lossy().to_string(),
@@ -314,7 +334,8 @@ pub fn run() {
             export_proof_pack,
             summarize_statepoint,
             list_proof_packs,
-            export_submission_bundle
+            export_submission_bundle,
+            generate_mimo_draft
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenMC Studio");

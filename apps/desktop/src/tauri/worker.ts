@@ -63,6 +63,8 @@ export interface RunHistoryEntry {
   runId: string;
   ok?: boolean;
   returnCode?: number;
+  kEffective?: number;
+  kStdDev?: number;
   startedAt?: string;
   endedAt?: string;
   runDir: string;
@@ -132,6 +134,11 @@ export async function listProofPacks(projectDir: string): Promise<ProofPackEntry
 export async function exportSubmissionBundle(projectDir: string, repoUrl: string): Promise<{ ok: boolean; bundlePath: string }> {
   const result = await invokeWorker('export_submission_bundle', { request: { projectDir, repoUrl } });
   return parseWorkerJson<{ ok: boolean; bundlePath: string }>(result);
+}
+
+export async function generateMimoDraft(projectDir: string, repoUrl: string): Promise<{ ok: boolean; draftPath: string }> {
+  const result = await invokeWorker('generate_mimo_draft', { request: { projectDir, repoUrl } });
+  return parseWorkerJson<{ ok: boolean; draftPath: string }>(result);
 }
 
 async function invokeWorker(command: string, args?: Record<string, unknown>): Promise<WorkerResult> {

@@ -17,6 +17,7 @@ import {
   listRunHistory,
   exportProofPack,
   exportSubmissionBundle,
+  generateMimoDraft,
   listProofPacks,
   runOpenMc,
   summarizeStatepoint,
@@ -500,6 +501,7 @@ function RunPanel({ project }: { project: ProjectBundle }) {
               <div key={entry.runId} className="history-item">
                 <strong>{entry.runId}</strong>
                 <span>{entry.ok ? 'OK' : 'FAILED'} (code: {entry.returnCode ?? 'n/a'})</span>
+                <span>k-eff: {entry.kEffective ?? 'n/a'} ± {entry.kStdDev ?? 'n/a'}</span>
                 <span>{entry.startedAt ?? 'unknown start'}</span>
               </div>
             ))}
@@ -520,6 +522,7 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
   const [statepointSummary, setStatepointSummary] = useState<StatepointSummary | null>(null);
   const [proofMessage, setProofMessage] = useState<string | null>(null);
   const [bundleMessage, setBundleMessage] = useState<string | null>(null);
+  const [draftMessage, setDraftMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<RunHistoryEntry[]>([]);
   const [proofPacks, setProofPacks] = useState<ProofPackEntry[]>([]);
 
@@ -580,6 +583,21 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
     }
   }
 
+  async function generateMimoAnswerDraft() {
+    if (!projectDir.trim()) {
+      setDraftMessage('Enter a project directory first.');
+      return;
+    }
+
+    try {
+      await saveProjectBundle(projectDir.trim(), project);
+      const result = await generateMimoDraft(projectDir.trim(), 'https://github.com/rinopatrick/openmc-studio');
+      setDraftMessage(`Mimo draft generated at ${result.draftPath}`);
+    } catch (caught) {
+      setDraftMessage(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
   async function loadStatepointSummary() {
     if (!projectDir.trim()) {
       setSummary('Enter a project directory first.');
@@ -618,6 +636,7 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
             <button className="primary-action" onClick={generateProofPack}>Export proof pack</button>
             <button className="secondary-action" onClick={refreshProofPacks}>List proof packs</button>
             <button className="primary-action" onClick={exportSubmissionZip}>Export submission ZIP</button>
+            <button className="secondary-action" onClick={generateMimoAnswerDraft}>Generate Mimo draft</button>
           </div>
           {summary && <p className="muted">{summary}</p>}
           <RunTrendChart history={history} />
@@ -633,6 +652,7 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
           )}
           {proofMessage && <p className="muted">{proofMessage}</p>}
           {bundleMessage && <p className="muted">{bundleMessage}</p>}
+          {draftMessage && <p className="muted">{draftMessage}</p>}
           {proofPacks.length > 0 && (
             <div className="history-list">
               {proofPacks.map((pack) => (
@@ -662,9 +682,11 @@ function RunTrendChart({ history }: { history: RunHistoryEntry[] }) {
     return <p className="muted">No run history loaded yet.</p>;
   }
 
-  const points = [...history].reverse().map((entry, index) => ({
+  const orderedHistory = [...history].reverse();
+  const points = orderedHistory.map((entry, index) => ({
     x: index,
     y: entry.ok ? 1 : 0,
+    runId: entry.runId,
   }));
 
   const width = 420;
@@ -682,7 +704,7 @@ function RunTrendChart({ history }: { history: RunHistoryEntry[] }) {
         <path d={path} className="trend-line" />
         {points.map((point, index) => (
           <circle key={`${point.x}-${point.y}`} cx={xScale(point.x)} cy={yScale(point.y)} r="3.5" className={point.y ? 'trend-ok' : 'trend-fail'}>
-            <title>{history[index].runId}: {point.y ? 'OK' : 'FAILED'}</title>
+            <title>{point.runId}: {point.y ? 'OK' : 'FAILED'}</title>
           </circle>
         ))}
       </svg>

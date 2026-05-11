@@ -56,6 +56,10 @@ def main(argv: list[str] | None = None) -> int:
     bundle.add_argument("--project-dir", required=True)
     bundle.add_argument("--repo-url", default="")
 
+    mimo = subparsers.add_parser("generate-mimo-draft")
+    mimo.add_argument("--project-dir", required=True)
+    mimo.add_argument("--repo-url", default="")
+
     args = parser.parse_args(argv)
 
     if args.command == "handshake":
@@ -89,6 +93,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "export-submission-bundle":
         return emit(export_submission_bundle(Path(args.project_dir), args.repo_url))
+
+    if args.command == "generate-mimo-draft":
+        return emit(generate_mimo_draft(Path(args.project_dir), args.repo_url))
 
     return 2
 
@@ -237,6 +244,10 @@ def run_openmc(project_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
     (run_dir / "stdout.log").write_text(stdout, encoding="utf-8")
     (run_dir / "stderr.log").write_text(stderr, encoding="utf-8")
 
+    statepoint_info = summarize_statepoint(project_dir).get("summary")
+    k_effective = statepoint_info.get("kEffective") if isinstance(statepoint_info, dict) else None
+    k_std_dev = statepoint_info.get("kStdDev") if isinstance(statepoint_info, dict) else None
+
     manifest = {
         "runId": run_id,
         "ok": ok,
@@ -246,6 +257,8 @@ def run_openmc(project_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
         "returnCode": return_code,
         "startedAt": started_at,
         "endedAt": ended_at,
+        "kEffective": k_effective,
+        "kStdDev": k_std_dev,
         "stdoutLog": str(run_dir / "stdout.log"),
         "stderrLog": str(run_dir / "stderr.log"),
     }
@@ -479,6 +492,47 @@ def export_submission_bundle(project_dir: Path, repo_url: str) -> dict[str, Any]
         "includedProofPacks": len(proof_packs[:3]),
         "includedRuns": len(latest_runs),
     }
+
+
+def generate_mimo_draft(project_dir: Path, repo_url: str) -> dict[str, Any]:
+    reports_dir = project_dir / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out_path = reports_dir / f"mimo-draft-{timestamp}.txt"
+
+    run_summary = summarize_results(project_dir).get("summary", {})
+    statepoint = summarize_statepoint(project_dir).get("summary")
+    proof_packs = list_proof_packs(project_dir).get("proofPacks", [])
+
+    q4 = (
+        "04. Please describe the specific results of your Agent- or AI-driven project\n\n"
+        "I built OpenMC Studio, a lightweight AI-assisted desktop GUI that lowers the barrier to OpenMC neutron transport simulation. "
+        "The core pain point is that OpenMC typically requires coding and domain-heavy manual setup, making it hard for non-coders "
+        "to model, validate, run, and analyze simulations.\n\n"
+        "The core logic flow combines long-chain reasoning and modular agent-style orchestration: environment detection, project modeling, "
+        "geometry/physics sanity validation, deterministic OpenMC XML generation, run orchestration, and evidence export. "
+        "Current implemented workflow includes: visual model presets for multiple reactor families, irregular custom topology support, "
+        "save/load portable project bundles, generated inputs tracking, run logs/manifests, statepoint summary extraction, and proof-pack export.\n\n"
+        f"Current evidence summary: total runs={run_summary.get('totalRuns', 0)}, successful runs={run_summary.get('successfulRuns', 0)}, "
+        f"failed runs={run_summary.get('failedRuns', 0)}, latest run={run_summary.get('latestRunId')}. "
+        f"Latest statepoint k-eff={statepoint.get('kEffective') if isinstance(statepoint, dict) else 'n/a'} "
+        f"(+/- {statepoint.get('kStdDev') if isinstance(statepoint, dict) else 'n/a'}).\n"
+    )
+
+    q5 = (
+        "\n05. Proof of Use and Influence\n\n"
+        f"GitHub (public): {repo_url}\n"
+        f"Project path: {project_dir}\n"
+        f"Proof packs generated: {len(proof_packs)}\n"
+        "Available evidence includes:\n"
+        "- Terminal logs showing typecheck/test/build verification\n"
+        "- Run manifests and stdout/stderr logs under runs/*\n"
+        "- Generated OpenMC XML artifacts under generated/*\n"
+        "- Submission ZIP and proof-checklist files under reports/*\n"
+    )
+
+    out_path.write_text(q4 + q5, encoding="utf-8")
+    return {"ok": True, "draftPath": str(out_path)}
 
 
 def _add_if_exists(archive: zipfile.ZipFile, source: Path, destination: str) -> None:
