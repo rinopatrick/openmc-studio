@@ -1,6 +1,7 @@
 import {
   createProjectBundle,
   createProjectFromPreset,
+  generateOpenMcArtifacts,
   reactorPresets,
   validateModelBasics,
   type HierarchyNode,
@@ -17,6 +18,7 @@ import {
   type HealthCheckResponse,
   type OpenMcCandidate,
 } from '../tauri/worker.js';
+import { loadProjectBundle, saveProjectBundle } from '../tauri/projectStorage.js';
 import { LatticeCanvas } from './LatticeCanvas.js';
 
 type StudioStep = 'environment' | 'model' | 'validate' | 'run' | 'results';
@@ -26,6 +28,7 @@ interface StudioState {
   project: ProjectBundle;
   setStep: (step: StudioStep) => void;
   createProjectFromPreset: (presetId: string) => void;
+  setProject: (project: ProjectBundle) => void;
   selectedCell?: string;
   setSelectedCell: (selectedCell: string) => void;
 }
@@ -39,6 +42,7 @@ const useStudioState = create<StudioState>((set) => ({
     now: new Date().toISOString(),
   }),
   setStep: (step) => set({ step }),
+  setProject: (project) => set({ project }),
   setSelectedCell: (selectedCell) => set({ selectedCell }),
   createProjectFromPreset: (presetId) =>
     set({
@@ -97,7 +101,7 @@ export function App() {
         {step === 'environment' && <EnvironmentPanel />}
         {step === 'model' && <ModelPanel project={project} />}
         {step === 'validate' && <ValidationPanel diagnostics={diagnostics} />}
-        {step === 'run' && <RunPanel />}
+        {step === 'run' && <RunPanel project={project} />}
         {step === 'results' && <ResultsPanel />}
       </section>
     </main>
@@ -239,15 +243,60 @@ function HealthCheckList({ health }: { health: HealthCheckResponse }) {
 
 function ModelPanel({ project }: { project: ProjectBundle }) {
   const createPresetProject = useStudioState((state) => state.createProjectFromPreset);
+  const setProject = useStudioState((state) => state.setProject);
   const selectedCell = useStudioState((state) => state.selectedCell);
   const setSelectedCell = useStudioState((state) => state.setSelectedCell);
   const lattice = project.model.lattices[0];
+  const [projectDirectory, setProjectDirectory] = useState('');
+  const [storageMessage, setStorageMessage] = useState<string | null>(null);
+
+  async function saveProject() {
+    if (!projectDirectory.trim()) {
+      setStorageMessage('Enter a project directory first.');
+      return;
+    }
+
+    try {
+      await saveProjectBundle(projectDirectory.trim(), project);
+      setStorageMessage('Project saved.');
+    } catch (caught) {
+      setStorageMessage(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
+  async function loadProject() {
+    if (!projectDirectory.trim()) {
+      setStorageMessage('Enter a project directory first.');
+      return;
+    }
+
+    try {
+      setProject(await loadProjectBundle(projectDirectory.trim()));
+      setStorageMessage('Project loaded.');
+    } catch (caught) {
+      setStorageMessage(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
 
   return (
     <section className="canvas-layout">
       <article className="card tree-card">
         <h3>Hierarchy</h3>
         <p className="muted">{project.model.family}</p>
+        <div className="project-storage">
+          <label htmlFor="project-dir">Project directory</label>
+          <input
+            id="project-dir"
+            value={projectDirectory}
+            onChange={(event) => setProjectDirectory(event.target.value)}
+            placeholder="/home/user/openmc-project or C:\\Users\\..."
+          />
+          <div className="action-row compact">
+            <button className="secondary-action" onClick={saveProject}>Save</button>
+            <button className="secondary-action" onClick={loadProject}>Load</button>
+          </div>
+          {storageMessage && <p className="muted">{storageMessage}</p>}
+        </div>
         <div className="preset-grid">
           {reactorPresets.map((preset) => (
             <button key={preset.id} className="preset-button" onClick={() => createPresetProject(preset.id)}>
@@ -348,12 +397,22 @@ function ValidationPanel({ diagnostics }: { diagnostics: ReturnType<typeof valid
   );
 }
 
-function RunPanel() {
+function RunPanel({ project }: { project: ProjectBundle }) {
+  const artifacts = useMemo(() => generateOpenMcArtifacts(project.model), [project]);
+
   return (
-    <section className="card hero-card">
-      <p className="eyebrow">Run orchestration</p>
-      <h2>Jobs will run through the Python worker on demand.</h2>
-      <p>Planned controls: start, cancel, retry, live logs, ETA, run manifests, and reproducibility snapshots.</p>
+    <section className="panel-grid">
+      <article className="card hero-card">
+        <p className="eyebrow">Run orchestration</p>
+        <h2>Generated OpenMC artifacts are now traceable from the GUI model.</h2>
+        <p>Next step: write these files into the project `generated` folder and launch OpenMC through the worker.</p>
+      </article>
+      <article className="card artifact-preview">
+        <h3>settings.xml preview</h3>
+        <pre>{artifacts.settingsXml}</pre>
+        <h3>materials.xml preview</h3>
+        <pre>{artifacts.materialsXml.slice(0, 900)}</pre>
+      </article>
     </section>
   );
 }
