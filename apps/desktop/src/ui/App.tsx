@@ -17,12 +17,14 @@ import {
   listRunHistory,
   exportProofPack,
   runOpenMc,
+  summarizeStatepoint,
   summarizeResults,
   workerHandshake,
   type DetectEnvironmentResponse,
   type HealthCheckResponse,
   type OpenMcCandidate,
   type RunHistoryEntry,
+  type StatepointSummary,
 } from '../tauri/worker.js';
 import { loadProjectBundle, saveProjectBundle } from '../tauri/projectStorage.js';
 import { LatticeCanvas } from './LatticeCanvas.js';
@@ -512,6 +514,7 @@ function splitCommand(command: string): string[] {
 function ResultsPanel({ project }: { project: ProjectBundle }) {
   const [projectDir, setProjectDir] = useState('');
   const [summary, setSummary] = useState<string | null>(null);
+  const [statepointSummary, setStatepointSummary] = useState<StatepointSummary | null>(null);
   const [proofMessage, setProofMessage] = useState<string | null>(null);
 
   async function loadSummary() {
@@ -546,6 +549,26 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
     }
   }
 
+  async function loadStatepointSummary() {
+    if (!projectDir.trim()) {
+      setSummary('Enter a project directory first.');
+      return;
+    }
+
+    try {
+      const result = await summarizeStatepoint(projectDir.trim());
+      if (!result.ok || !result.summary) {
+        setSummary(result.message ?? 'No statepoint summary available.');
+        setStatepointSummary(null);
+        return;
+      }
+      setStatepointSummary(result.summary);
+    } catch (caught) {
+      setSummary(caught instanceof Error ? caught.message : String(caught));
+      setStatepointSummary(null);
+    }
+  }
+
   return (
     <section className="panel-grid">
       <article className="card">
@@ -560,9 +583,20 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
           <input id="results-project-dir" value={projectDir} onChange={(event) => setProjectDir(event.target.value)} placeholder="Project folder path" />
           <div className="action-row compact">
             <button className="secondary-action" onClick={loadSummary}>Load run summary</button>
+            <button className="secondary-action" onClick={loadStatepointSummary}>Load statepoint summary</button>
             <button className="primary-action" onClick={generateProofPack}>Export proof pack</button>
           </div>
           {summary && <p className="muted">{summary}</p>}
+          {statepointSummary && (
+            <div className="history-item">
+              <strong>Latest statepoint</strong>
+              <span>{statepointSummary.statepointPath}</span>
+              <span>Size: {statepointSummary.sizeBytes} bytes</span>
+              <span>k-eff: {statepointSummary.kEffective ?? 'n/a'} ± {statepointSummary.kStdDev ?? 'n/a'}</span>
+              {statepointSummary.tallies && <span>Tallies: {statepointSummary.tallies.join(', ')}</span>}
+              {statepointSummary.parseWarning && <span>{statepointSummary.parseWarning}</span>}
+            </div>
+          )}
           {proofMessage && <p className="muted">{proofMessage}</p>}
         </div>
       </article>

@@ -77,6 +77,16 @@ export interface ResultsSummary {
   latestStartedAt?: string | null;
 }
 
+export interface StatepointSummary {
+  statepointPath: string;
+  sizeBytes: number;
+  modifiedAt: string;
+  kEffective?: number | null;
+  kStdDev?: number | null;
+  tallies?: string[] | null;
+  parseWarning?: string;
+}
+
 export async function runOpenMc(projectDir: string, command?: string[]): Promise<OpenMcRunResult> {
   const result = await invokeWorker('run_openmc', { request: { projectDir, command, timeoutSeconds: 3600 } });
   return parseWorkerJson<OpenMcRunResult>(result);
@@ -99,6 +109,11 @@ export async function summarizeResults(projectDir: string): Promise<ResultsSumma
 export async function exportProofPack(projectDir: string, repoUrl: string): Promise<{ ok: boolean; proofPackDir: string }> {
   const result = await invokeWorker('export_proof_pack', { request: { projectDir, repoUrl } });
   return parseWorkerJson<{ ok: boolean; proofPackDir: string }>(result);
+}
+
+export async function summarizeStatepoint(projectDir: string): Promise<{ ok: boolean; message?: string; summary?: StatepointSummary | null }> {
+  const result = await invokeWorker('summarize_statepoint', { request: { projectDir } });
+  return parseWorkerJson<{ ok: boolean; message?: string; summary?: StatepointSummary | null }>(result);
 }
 
 async function invokeWorker(command: string, args?: Record<string, unknown>): Promise<WorkerResult> {

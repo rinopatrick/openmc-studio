@@ -6,7 +6,15 @@ import sys
 import tempfile
 from pathlib import Path
 
-from openmc_worker.cli import detect_candidates, export_proof_pack, generate_inputs, health_check, run_openmc, summarize_results
+from openmc_worker.cli import (
+    detect_candidates,
+    export_proof_pack,
+    generate_inputs,
+    health_check,
+    run_openmc,
+    summarize_results,
+    summarize_statepoint,
+)
 
 
 class WorkerTests(unittest.TestCase):
@@ -86,6 +94,18 @@ class WorkerTests(unittest.TestCase):
             proof = export_proof_pack(root, "https://github.com/rinopatrick/openmc-studio")
             self.assertTrue(proof["ok"])
             self.assertTrue((Path(proof["proofPackDir"]) / "proof-checklist.json").is_file())
+
+    def test_summarize_statepoint_graceful_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generated = root / "generated"
+            generated.mkdir(parents=True)
+            (generated / "statepoint.001.h5").write_bytes(b"mock-hdf5-placeholder")
+
+            result = summarize_statepoint(root)
+            self.assertTrue(result["ok"])
+            self.assertIsNotNone(result["summary"])
+            self.assertTrue(str(result["summary"]["statepointPath"]).endswith("statepoint.001.h5"))
 
 
 if __name__ == "__main__":

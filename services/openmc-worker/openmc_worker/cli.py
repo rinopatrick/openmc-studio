@@ -41,6 +41,9 @@ def main(argv: list[str] | None = None) -> int:
     summarize = subparsers.add_parser("summarize-results")
     summarize.add_argument("--project-dir", required=True)
 
+    statepoint = subparsers.add_parser("summarize-statepoint")
+    statepoint.add_argument("--project-dir", required=True)
+
     proof = subparsers.add_parser("export-proof-pack")
     proof.add_argument("--project-dir", required=True)
     proof.add_argument("--repo-url", default="")
@@ -66,6 +69,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "summarize-results":
         return emit(summarize_results(Path(args.project_dir)))
+
+    if args.command == "summarize-statepoint":
+        return emit(summarize_statepoint(Path(args.project_dir)))
 
     if args.command == "export-proof-pack":
         return emit(export_proof_pack(Path(args.project_dir), args.repo_url))
@@ -370,6 +376,56 @@ def export_proof_pack(project_dir: Path, repo_url: str) -> dict[str, Any]:
     )
 
     return {"ok": True, "proofPackDir": str(proof_dir), "summary": summary}
+
+
+def summarize_statepoint(project_dir: Path) -> dict[str, Any]:
+    generated_dir = project_dir / "generated"
+    if not generated_dir.is_dir():
+        return {
+            "ok": False,
+            "message": "Generated directory not found. Run input generation and OpenMC first.",
+            "summary": None,
+        }
+
+    statepoints = sorted(generated_dir.glob("statepoint.*.h5"), key=lambda path: path.stat().st_mtime, reverse=True)
+    if not statepoints:
+        return {
+            "ok": False,
+            "message": "No statepoint.*.h5 files found in generated directory.",
+            "summary": None,
+        }
+
+    latest = statepoints[0]
+    summary: dict[str, Any] = {
+        "statepointPath": str(latest),
+        "sizeBytes": latest.stat().st_size,
+        "modifiedAt": datetime.fromtimestamp(latest.stat().st_mtime, tz=timezone.utc).isoformat(),
+        "kEffective": None,
+        "kStdDev": None,
+        "tallies": None,
+    }
+
+    # Best effort parse with openmc Python module if available.
+    try:
+        import openmc  # type: ignore
+
+        statepoint = openmc.StatePoint(str(latest))
+        if getattr(statepoint, "k_combined", None) is not None:
+            k_mean, k_std = statepoint.k_combined
+            summary["kEffective"] = float(k_mean)
+            summary["kStdDev"] = float(k_std)
+
+        tally_names = []
+        for tally in statepoint.tallies.values():
+            if tally.name:
+                tally_names.append(tally.name)
+            else:
+                tally_names.append(f"tally-{tally.id}")
+        summary["tallies"] = tally_names
+    except Exception as exc:  # noqa: BLE001 - tolerate missing optional deps
+        summary["parseWarning"] = f"Statepoint parsed in metadata-only mode: {exc}"
+
+    return {"ok": True, "summary": summary}
 
 
 def emit(payload: dict[str, Any]) -> int:
