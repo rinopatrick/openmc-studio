@@ -1,8 +1,10 @@
 import {
   createProjectBundle,
+  createProjectFromPreset,
+  reactorPresets,
   validateModelBasics,
+  type HierarchyNode,
   type ProjectBundle,
-  type ReactorFamily,
   type ReactorModel,
 } from '@openmc-studio/schema';
 import { useMemo, useState } from 'react';
@@ -22,7 +24,7 @@ interface StudioState {
   step: StudioStep;
   project: ProjectBundle;
   setStep: (step: StudioStep) => void;
-  createProject: (family: ReactorFamily) => void;
+  createProjectFromPreset: (presetId: string) => void;
 }
 
 const useStudioState = create<StudioState>((set) => ({
@@ -34,13 +36,13 @@ const useStudioState = create<StudioState>((set) => ({
     now: new Date().toISOString(),
   }),
   setStep: (step) => set({ step }),
-  createProject: (family) =>
+  createProjectFromPreset: (presetId) =>
     set({
       step: 'model',
-      project: createProjectBundle({
+      project: createProjectFromPreset({
         id: crypto.randomUUID(),
-        name: defaultProjectName(family),
-        family,
+        name: reactorPresets.find((preset) => preset.id === presetId)?.name ?? 'OpenMC Project',
+        presetId,
       }),
     }),
 }));
@@ -96,22 +98,6 @@ export function App() {
       </section>
     </main>
   );
-}
-
-function defaultProjectName(family: ReactorFamily): string {
-  return {
-    pwr: 'PWR Project',
-    bwr: 'BWR Project',
-    'phwr-candu': 'PHWR/CANDU Project',
-    htgr: 'HTGR Project',
-    sfr: 'SFR Project',
-    lfr: 'LFR Project',
-    msr: 'MSR Project',
-    smr: 'SMR Project',
-    research: 'Research Reactor Project',
-    'shielding-fixed-source': 'Shielding Project',
-    'custom-irregular': 'Custom Irregular Reactor',
-  }[family];
 }
 
 function labelForStep(step: StudioStep): string {
@@ -248,7 +234,7 @@ function HealthCheckList({ health }: { health: HealthCheckResponse }) {
 }
 
 function ModelPanel({ project }: { project: ProjectBundle }) {
-  const createProject = useStudioState((state) => state.createProject);
+  const createPresetProject = useStudioState((state) => state.createProjectFromPreset);
 
   return (
     <section className="canvas-layout">
@@ -256,22 +242,22 @@ function ModelPanel({ project }: { project: ProjectBundle }) {
         <h3>Hierarchy</h3>
         <p className="muted">{project.model.family}</p>
         <div className="preset-grid">
-          {(['pwr', 'bwr', 'phwr-candu', 'htgr', 'sfr', 'lfr', 'msr', 'smr', 'research', 'shielding-fixed-source', 'custom-irregular'] as ReactorFamily[]).map((family) => (
-            <button key={family} className="preset-button" onClick={() => createProject(family)}>
-              {defaultProjectName(family)}
+          {reactorPresets.map((preset) => (
+            <button key={preset.id} className="preset-button" onClick={() => createPresetProject(preset.id)}>
+              <strong>{preset.name}</strong>
+              <span>{preset.description}</span>
             </button>
           ))}
         </div>
-        <div className="tree-node">{project.model.root.name}</div>
-        <div className="tree-node child">Assembly / Block / Region</div>
-        <div className="tree-node child">Pin / Cell / Custom shape</div>
+        <HierarchyTree node={project.model.root} />
       </article>
       <article className="card canvas-card">
         <div className="canvas-header">
           <h3>Top View</h3>
-          <span>Rect / Hex / Irregular</span>
+          <span>{project.model.lattices[0]?.kind ?? 'Freeform'} layout</span>
         </div>
         <div className="mock-canvas top-view" />
+        <ModelSummary project={project} />
       </article>
       <article className="card canvas-card">
         <div className="canvas-header">
@@ -281,6 +267,32 @@ function ModelPanel({ project }: { project: ProjectBundle }) {
         <div className="mock-canvas section-view" />
       </article>
     </section>
+  );
+}
+
+function HierarchyTree({ node, depth = 0 }: { node: HierarchyNode; depth?: number }) {
+  return (
+    <div>
+      <div className="tree-node" style={{ marginLeft: depth * 16 }}>
+        <strong>{node.name}</strong>
+        <span>{node.role}</span>
+      </div>
+      {node.children.map((child) => (
+        <HierarchyTree key={child.id} node={child} depth={depth + 1} />
+      ))}
+    </div>
+  );
+}
+
+function ModelSummary({ project }: { project: ProjectBundle }) {
+  const lattice = project.model.lattices[0];
+
+  return (
+    <div className="model-summary">
+      <span>{project.model.materials.materials.length} materials</span>
+      <span>{lattice ? `${lattice.kind} lattice (${lattice.map.length} rows)` : 'no lattice'}</span>
+      <span>{project.model.settings.mode}</span>
+    </div>
   );
 }
 

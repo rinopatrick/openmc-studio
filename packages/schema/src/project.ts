@@ -1,4 +1,5 @@
 import type { ProjectManifest, ReactorFamily, ReactorModel, UnitPresetName } from './model.js';
+import { createPresetModel } from './presets.js';
 
 export interface CreateProjectOptions {
   id: string;
@@ -29,6 +30,25 @@ export function createProjectBundle(options: CreateProjectOptions): ProjectBundl
       modelPath: 'model/model.json',
     },
     model: createEmptyReactorModel(options.family),
+  };
+}
+
+export function createProjectFromPreset(options: Omit<CreateProjectOptions, 'family'> & { presetId: string }): ProjectBundle {
+  const model = createPresetModel(options.presetId);
+  const now = options.now ?? new Date().toISOString();
+
+  return {
+    manifest: {
+      schemaVersion: 1,
+      id: options.id,
+      name: options.name,
+      createdAt: now,
+      updatedAt: now,
+      defaultUnits: options.defaultUnits ?? 'nuclear-common',
+      reactorFamily: model.family,
+      modelPath: 'model/model.json',
+    },
+    model,
   };
 }
 

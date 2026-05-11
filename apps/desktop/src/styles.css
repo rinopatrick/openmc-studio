@@ -285,6 +285,8 @@ code {
 }
 
 .preset-button {
+  display: grid;
+  gap: 4px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 12px;
   padding: 10px;
@@ -296,6 +298,17 @@ code {
 
 .preset-button:hover {
   border-color: rgba(94, 234, 212, 0.52);
+}
+
+.preset-button span,
+.tree-node span {
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.tree-node {
+  display: grid;
+  gap: 4px;
 }
 
 .canvas-header {
@@ -312,6 +325,21 @@ code {
   background-image:
     linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
     linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+}
+
+.model-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.model-summary span {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: #cbd5e1;
+  background: rgba(8, 17, 31, 0.44);
 }
 
 .top-view {
