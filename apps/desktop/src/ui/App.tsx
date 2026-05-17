@@ -28,6 +28,7 @@ import {
   exportProofPack,
   exportSubmissionBundle,
   generateMimoDraft,
+  generateNotebook,
   liveRunStatus,
   listProofPacks,
   renderOpenMcPlot,
@@ -3632,6 +3633,7 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
   const [proofMessage, setProofMessage] = useState<string | null>(null);
   const [bundleMessage, setBundleMessage] = useState<string | null>(null);
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
+  const [notebookMessage, setNotebookMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<RunHistoryEntry[]>([]);
   const [proofPacks, setProofPacks] = useState<ProofPackEntry[]>([]);
   const [volumeCellIds, setVolumeCellIds] = useState<number[]>([]);
@@ -3644,7 +3646,7 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
   const [isStep3Loading, setIsStep3Loading] = useState(false);
   const [step1Action, setStep1Action] = useState<'summary' | 'statepoint' | 'custom' | null>(null);
   const [step2Action, setStep2Action] = useState<'depletion' | 'spectrum' | null>(null);
-  const [step3Action, setStep3Action] = useState<'proof' | 'zip' | 'list' | 'draft' | null>(null);
+  const [step3Action, setStep3Action] = useState<'proof' | 'zip' | 'list' | 'draft' | 'notebook' | null>(null);
   const [step1Error, setStep1Error] = useState<string | null>(null);
   const [step2Error, setStep2Error] = useState<string | null>(null);
   const [step3Error, setStep3Error] = useState<string | null>(null);
@@ -4076,6 +4078,32 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
     }
   }
 
+  async function generateJupyterNotebook() {
+    if (!projectDir.trim()) {
+      setNotebookMessage('Enter a project directory first.');
+      return;
+    }
+
+    setIsStep3Loading(true);
+    setStep3Action('notebook');
+    setStep3Error(null);
+    pushActivity('3', 'generateNotebook', 'started');
+    try {
+      await saveProjectBundle(projectDir.trim(), project);
+      const result = await generateNotebook(projectDir.trim());
+      setNotebookMessage(`Notebook generated at ${result.notebookPath} (${result.cells} cells)`);
+      pushActivity('3', 'generateNotebook', 'success');
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setNotebookMessage(message);
+      setStep3Error(message);
+      pushActivity('3', 'generateNotebook', 'failed', message);
+    } finally {
+      setIsStep3Loading(false);
+      setStep3Action(null);
+    }
+  }
+
   async function loadStatepointSummary() {
     if (!projectDir.trim()) {
       setSummary('Enter a project directory first.');
@@ -4323,6 +4351,7 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
     if (step3Action === 'zip') return exportSubmissionZip();
     if (step3Action === 'list') return refreshProofPacks();
     if (step3Action === 'draft') return generateMimoAnswerDraft();
+    if (step3Action === 'notebook') return generateJupyterNotebook();
     return generateProofPack();
   }
 
@@ -4434,6 +4463,7 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
             <button className="primary-action" onClick={exportSubmissionZip} disabled={isStep3Loading} title={isStep3Loading ? 'Step 3 action in progress. Please wait.' : 'Export final submission ZIP.'}>{step3Action === 'zip' ? '⏳ Exporting submission ZIP...' : 'Export submission ZIP'}</button>
             <button className="secondary-action" onClick={refreshProofPacks} disabled={isStep3Loading} title={isStep3Loading ? 'Step 3 action in progress. Please wait.' : 'List existing proof packs from project folder.'}>{step3Action === 'list' ? '⏳ Loading proof packs...' : 'List proof packs'}</button>
             <button className="secondary-action" onClick={generateMimoAnswerDraft} disabled={isStep3Loading} title={isStep3Loading ? 'Step 3 action in progress. Please wait.' : 'Generate text draft for submission answer.'}>{step3Action === 'draft' ? '⏳ Generating Mimo draft...' : 'Generate Mimo draft'}</button>
+            <button className="secondary-action" onClick={generateJupyterNotebook} disabled={isStep3Loading} title={isStep3Loading ? 'Step 3 action in progress. Please wait.' : 'Generate Jupyter notebook (.ipynb) for reproducible simulation.'}>{step3Action === 'notebook' ? '⏳ Generating notebook...' : 'Generate Jupyter notebook'}</button>
           </div>
           {summary && <p className="muted">{summary}</p>}
           <RunTrendChart history={history} />
@@ -4575,6 +4605,7 @@ function ResultsPanel({ project }: { project: ProjectBundle }) {
           </details>
           {bundleMessage && <p className="muted">{bundleMessage}</p>}
           {draftMessage && <p className="muted">{draftMessage}</p>}
+          {notebookMessage && <p className="muted">{notebookMessage}</p>}
           {proofPacks.length > 0 && (
             <div className="history-list">
               {proofPacks.map((pack) => (

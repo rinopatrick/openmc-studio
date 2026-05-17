@@ -261,6 +261,11 @@ export async function generateMimoDraft(projectDir: string, repoUrl: string): Pr
   return parseWorkerJson<{ ok: boolean; draftPath: string }>(result);
 }
 
+export async function generateNotebook(projectDir: string): Promise<{ ok: boolean; notebookPath: string; cells: number; message?: string }> {
+  const result = await invokeWorker('generate_notebook', { request: { projectDir } });
+  return parseWorkerJson<{ ok: boolean; notebookPath: string; cells: number; message?: string }>(result);
+}
+
 export interface OpenmcErrorAnalysis {
   errors: Array<{ type: string; message: string; fatal: boolean }>;
   warnings: string[];

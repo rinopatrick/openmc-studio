@@ -42,6 +42,12 @@ struct GenerateInputsRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ProjectDirRequest {
+    project_dir: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RunOpenMcRequest {
     project_dir: String,
     command: Option<Vec<String>>,
@@ -254,6 +260,11 @@ fn generate_mimo_draft(request: MimoDraftRequest) -> Result<WorkerResult, String
 }
 
 #[tauri::command]
+fn generate_notebook(request: ProjectDirRequest) -> Result<WorkerResult, String> {
+    run_worker(&["generate-notebook", "--project-dir"], Some(request.project_dir))
+}
+
+#[tauri::command]
 fn live_run_status(request: LiveRunStatusRequest) -> Result<WorkerResult, String> {
     let run_id = request.run_id.unwrap_or_default();
     let tail = request.tail.unwrap_or(3000).to_string();
@@ -399,6 +410,7 @@ pub fn run() {
             list_proof_packs,
             export_submission_bundle,
             generate_mimo_draft,
+            generate_notebook,
             live_run_status
         ])
         .run(tauri::generate_context!())
