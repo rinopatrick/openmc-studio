@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Serialize)]
 struct WorkerResult {
@@ -9,6 +10,8 @@ struct WorkerResult {
     stdout: String,
     stderr: String,
 }
+
+static WORKER_PYTHON_OVERRIDE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -131,6 +134,24 @@ fn worker_handshake() -> Result<WorkerResult, String> {
 #[tauri::command]
 fn detect_openmc_environment() -> Result<WorkerResult, String> {
     run_worker(&["detect-env"], None)
+}
+
+#[tauri::command]
+fn set_worker_python(python_path: Option<String>) -> Result<String, String> {
+    let storage = WORKER_PYTHON_OVERRIDE.get_or_init(|| Mutex::new(None));
+    let mut guard = storage.lock().map_err(|_| "Failed to lock worker python override".to_string())?;
+    *guard = python_path.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() { None } else { Some(trimmed) }
+    });
+    Ok(guard.clone().unwrap_or_else(|| "python3/python (default)".to_string()))
+}
+
+#[tauri::command]
+fn get_worker_python() -> Result<Option<String>, String> {
+    let storage = WORKER_PYTHON_OVERRIDE.get_or_init(|| Mutex::new(None));
+    let guard = storage.lock().map_err(|_| "Failed to lock worker python override".to_string())?;
+    Ok(guard.clone())
 }
 
 #[tauri::command]
@@ -316,11 +337,26 @@ fn run_worker(args: &[&str], trailing_arg: Option<String>) -> Result<WorkerResul
     })
 }
 
-fn find_python_command() -> &'static str {
+fn find_python_command() -> String {
+    if let Some(storage) = WORKER_PYTHON_OVERRIDE.get() {
+        if let Ok(guard) = storage.lock() {
+            if let Some(path) = guard.clone() {
+                return path;
+            }
+        }
+    }
+
+    if let Ok(path) = std::env::var("OPENMC_WORKER_PYTHON") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+
     if cfg!(target_os = "windows") {
-        "python"
+        "python".to_string()
     } else {
-        "python3"
+        "python3".to_string()
     }
 }
 
@@ -349,6 +385,8 @@ pub fn run() {
             handshake,
             worker_handshake,
             detect_openmc_environment,
+            set_worker_python,
+            get_worker_python,
             health_check_openmc,
             save_project_bundle,
             load_project_bundle,

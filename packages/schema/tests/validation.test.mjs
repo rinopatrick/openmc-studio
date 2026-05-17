@@ -14,3 +14,30 @@ test('flags tally targets that do not exist', () => {
   const diagnostics = validateModelBasics(bundle.model);
   assert.ok(diagnostics.some((diagnostic) => diagnostic.id === 'tally-target-missing'));
 });
+
+test('flags sensitivity tally that has no nuclides', () => {
+  const bundle = createProjectBundle({ id: 'x', name: 'bad', family: 'custom-irregular' });
+  bundle.model.tallies.push({
+    id: 'tally-sensitivity-bad',
+    name: 'Sensitivity missing nuclides',
+    scores: ['flux'],
+    targetNodeIds: ['root'],
+    sensitivity: {
+      enabled: true,
+      nuclides: [],
+      scores: ['flux'],
+    },
+  });
+  const diagnostics = validateModelBasics(bundle.model);
+  assert.ok(diagnostics.some((diagnostic) => diagnostic.id === 'tally-sensitivity-nuclides-empty'));
+});
+
+test('flags OpenMC CSG cells that reference missing surfaces', () => {
+  const bundle = createProjectBundle({ id: 'x', name: 'bad', family: 'custom-irregular' });
+  bundle.model.openmcGeometry = {
+    surfaces: [],
+    cells: [{ id: 'cell', openmcId: 1, name: 'Bad cell', region: '-99' }],
+  };
+  const diagnostics = validateModelBasics(bundle.model);
+  assert.ok(diagnostics.some((diagnostic) => diagnostic.id === 'csg-region-missing-surface'));
+});

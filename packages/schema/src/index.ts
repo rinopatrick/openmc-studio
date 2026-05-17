@@ -1,4 +1,5 @@
 export * from './model.js';
+export * from './nuclides.js';
 export * from './openmcGenerator.js';
 export * from './presets.js';
 export * from './project.js';
