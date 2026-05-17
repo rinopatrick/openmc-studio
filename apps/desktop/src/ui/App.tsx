@@ -1085,24 +1085,24 @@ function AssemblyEditor({ project, onChange }: { project: ProjectBundle; onChang
 
 /** Generate axial positions for flat-top hex grid centered at origin.
  *  Returns positions in OpenMC's visual order: center first, then ring 1, ring 2, etc.
- *  Within each ring: clockwise from top-right (1 o'clock).
- *  Note: This is for VISUAL rendering only. The universes array uses opposite ring order.
+ *  Within each ring: clockwise from top (12 o'clock) — matches OpenMC HexLattice convention.
+ *  Reference: https://docs.openmc.org/en/stable/pythonapi/generated/openmc.HexLattice.html
  */
 function generateHexPositions(rings: number): Array<{ q: number; r: number; ring: number; idx: number }> {
   const result: Array<{ q: number; r: number; ring: number; idx: number }> = [];
   result.push({ q: 0, r: 0, ring: 0, idx: 0 });
   for (let ring = 1; ring < rings; ring++) {
-    // Start at top-right position for flat-top: (ring, -ring) in axial coords
-    let q = ring;
+    // Start at top (12 o'clock) for flat-top: (0, -ring) in axial coords
+    let q = 0;
     let r = -ring;
-    // Clockwise directions for flat-top: SE, S, SW, NW, N, NE
+    // Clockwise directions for flat-top hex from top: SE, S, SW, NW, N, NE
     const dirs = [
-      { dq: 0, dr: 1 },   // S
-      { dq: -1, dr: 1 },  // SW
-      { dq: -1, dr: 0 },  // NW
-      { dq: 0, dr: -1 },  // N
-      { dq: 1, dr: -1 },  // NE
-      { dq: 1, dr: 0 },   // SE
+      { dq: 1, dr: 0 },   // SE (top → top-right)
+      { dq: 0, dr: 1 },   // S  (right → bottom)
+      { dq: -1, dr: 1 },  // SW (bottom → bottom-left)
+      { dq: -1, dr: 0 },  // NW (left → top-left)
+      { dq: 0, dr: -1 },  // N  (top-left → top)
+      { dq: 1, dr: -1 },  // NE (top → top-right, next ring segment)
     ];
     for (let dir = 0; dir < 6; dir++) {
       for (let step = 0; step < ring; step++) {
