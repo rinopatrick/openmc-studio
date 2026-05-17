@@ -1024,23 +1024,31 @@ function AssemblyEditor({ project, onChange }: { project: ProjectBundle; onChang
                         const isCenter = pos.ring === 0;
                         const x = hSpacing * pos.q;
                         const y = vSpacing * (pos.r + 0.5 * pos.q);
+                        const pinColor = pin ? `hsl(${(components.pinCellTypes.findIndex((p) => p.id === pin.id) * 137) % 360}, 60%, 45%)` : 'rgba(148,163,184,.2)';
                         return (
-                          <button
+                          <div
                             key={pos.idx}
                             className={`hex-cell assembly-hex-cell ${isCenter ? 'center-cell' : ''}`}
                             style={{ position: 'absolute', left: x + offsetX - cellWidth / 2, top: y + offsetY - cellHeight / 2, width: cellWidth, height: cellHeight }}
-                            title={`${pin?.name ?? 'empty'} · ${ringLabel}`}
-                            onClick={() => {
-                              const currentIdx = components.pinCellTypes.findIndex((p) => p.id === pinId);
-                              const nextIdx = (currentIdx + 1) % Math.max(1, components.pinCellTypes.length);
-                              const nextPinId = components.pinCellTypes[nextIdx]?.id ?? '';
-                              const newRingData = updateRingMapAt(ringData, pos.idx, nextPinId);
-                              updateAssembly(asm.id, { hexRings: newRingData, pinMap: ringMapToDiamond(newRingData) });
-                            }}
+                            title={`${pin?.name ?? 'empty'} · ${ringLabel} · Click to change pin type`}
                           >
-                            <span>{pin?.name?.slice(0, 2) ?? '—'}</span>
+                            <select
+                              className="hex-pin-select"
+                              value={pinId}
+                              onChange={(e) => {
+                                const newRingData = updateRingMapAt(ringData, pos.idx, e.target.value);
+                                updateAssembly(asm.id, { hexRings: newRingData, pinMap: ringMapToDiamond(newRingData) });
+                              }}
+                              style={{ background: pinColor }}
+                            >
+                              <option value="">—</option>
+                              {components.pinCellTypes.map((p) => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                              ))}
+                            </select>
+                            <span style={{ color: pin ? '#e2e8f0' : '#64748b' }}>{pin?.name?.slice(0, 2) ?? '—'}</span>
                             <small className="ring-chip">{ringLabel}</small>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
